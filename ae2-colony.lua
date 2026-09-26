@@ -36,6 +36,9 @@ local C_WARN    = colors.orange      -- Quantum Amber (Partial/Pending)
 local C_FAIL    = colors.red         -- Critical Red (Missing/Offline)
 -- ==========================================
 
+-- Track error status to dynamically adjust the layout space
+local hasActiveErrors = false
+
 local function drawHeader(colony, ae2, isPolling)
     monitor.setBackgroundColor(C_BG)
     monitor.clear()
@@ -97,6 +100,9 @@ local function drawHeader(colony, ae2, isPolling)
 end
 
 local function drawDebugPanel()
+    -- Only draw the panel if there is an active hardware or loop error
+    if not hasActiveErrors then return end
+
     local startY = h - 4
     monitor.setCursorPos(1, startY)
     monitor.setBackgroundColor(C_PANEL)
@@ -124,7 +130,8 @@ local function processRequests(colony, ae2)
     end
     
     local y = 9
-    local maxDisplayY = h - 6
+    -- Expand rows available if no errors are currently taking up space
+    local maxDisplayY = hasActiveErrors and (h - 6) or (h - 1)
     
     if #requests == 0 then
         monitor.setCursorPos(2, y)
@@ -190,23 +197,34 @@ while true do
     local colony = peripheral.find("colony_integrator")
     local ae2 = peripheral.find("me_bridge")
     
-    drawHeader(colony, ae2, true)
+    -- Reset error flag each loop iteration
+    hasActiveErrors = false
     
     if not colony or not ae2 then
+        hasActiveErrors = true
         if not colony then addLog("Hardware Fault: Colony node handshake failed.") end
         if not ae2 then addLog("Hardware Fault: ME system grid parity lost.") end
     else
         local coreSuccess, coreError = pcall(processRequests, colony, ae2)
         if not coreSuccess then
+            hasActiveErrors = true
             addLog("Core Error: " .. tostring(coreError):sub(1, 25))
         end
     end
     
-    drawDebugPanel()
+    -- Render Pass 1 (Polling indicator visible)
+    drawHeader(colony, ae2, true)
+    if hasActiveErrors then
+        drawDebugPanel()
+    end
+    
     sleep(0.5)
     
+    -- Render Pass 2 (Polling indicator cleared)
     drawHeader(colony, ae2, false)
-    drawDebugPanel()
+    if hasActiveErrors then
+        drawDebugPanel()
+    end
     
     sleep(REFRESH_RATE - 0.5)
 end
