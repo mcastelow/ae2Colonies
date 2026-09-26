@@ -14,6 +14,14 @@ local function addLog(msg)
     if #debugLogs > 4 then table.remove(debugLogs) end
 end
 
+-- Delivery history tracker
+local deliveryHistory = {}
+local function addDelivery(name, qty)
+    local timestamp = os.date("%H:%M")
+    table.insert(deliveryHistory, 1, string.format("[%s] -> %dx %s", timestamp, qty, name))
+    if #deliveryHistory > 5 then table.remove(deliveryHistory) end
+end
+
 -- Safely wrap monitor
 local monitor = peripheral.wrap(MONITOR_SIDE)
 if not monitor then error("[FATAL] Monitor not found on side: " .. MONITOR_SIDE) end
@@ -100,23 +108,41 @@ local function drawHeader(colony, ae2, isPolling)
 end
 
 local function drawDebugPanel()
-    -- Only draw the panel if there is an active hardware or loop error
-    if not hasActiveErrors then return end
-
-    local startY = h - 4
-    monitor.setCursorPos(1, startY)
-    monitor.setBackgroundColor(C_PANEL)
-    monitor.setTextColor(C_SUB)
-    monitor.clearLine()
-    monitor.write(" // CORE DIAGNOSTICS & SYSTEM EVENT FEED //")
-    monitor.setBackgroundColor(C_BG)
-    
-    for i, log in ipairs(debugLogs) do
-        if startY + i <= h then
-            monitor.setCursorPos(2, startY + i)
-            monitor.setTextColor(C_TEXT)
-            monitor.clearLine()
-            monitor.write(log)
+    -- Draw Diagnostics if there is an error
+    if hasActiveErrors then
+        local startY = h - 4
+        monitor.setCursorPos(1, startY)
+        monitor.setBackgroundColor(C_PANEL)
+        monitor.setTextColor(C_SUB)
+        monitor.clearLine()
+        monitor.write(" // CORE DIAGNOSTICS & SYSTEM EVENT FEED //")
+        monitor.setBackgroundColor(C_BG)
+        
+        for i, log in ipairs(debugLogs) do
+            if startY + i <= h then
+                monitor.setCursorPos(2, startY + i)
+                monitor.setTextColor(C_TEXT)
+                monitor.clearLine()
+                monitor.write(log)
+            end
+        end
+    -- Draw Delivery Feed if everything is working normally
+    elseif #deliveryHistory > 0 then
+        local startY = h - 5
+        monitor.setCursorPos(1, startY)
+        monitor.setBackgroundColor(C_PANEL)
+        monitor.setTextColor(C_SUCCESS)
+        monitor.clearLine()
+        monitor.write(" // RECENT LOGISTICS ROUTING DELIVERIES //")
+        monitor.setBackgroundColor(C_BG)
+        
+        for i, delivery in ipairs(deliveryHistory) do
+            if startY + i <= h then
+                monitor.setCursorPos(2, startY + i)
+                monitor.setTextColor(colors.lightGray)
+                monitor.clearLine()
+                monitor.write(delivery)
+            end
         end
     end
 end
@@ -130,8 +156,9 @@ local function processRequests(colony, ae2)
     end
     
     local y = 9
-    -- Expand rows available if no errors are currently taking up space
-    local maxDisplayY = hasActiveErrors and (h - 6) or (h - 1)
+    -- Dynamic screen buffer size depending on active visual panels
+    local hasPanel = hasActiveErrors or (#deliveryHistory > 0)
+    local maxDisplayY = hasPanel and (h - 7) or (h - 1)
     
     if #requests == 0 then
         monitor.setCursorPos(2, y)
@@ -171,16 +198,19 @@ local function processRequests(colony, ae2)
             monitor.setTextColor(C_SUCCESS)
             monitor.write("▶ ROUTING")
             
-            pcall(function()
+            local ok = pcall(function()
                 ae2.exportItem({name = itemID, count = needed}, EXPORT_DIRECTION)
             end)
+            if ok then addDelivery(displayName, needed) end
+            
         elseif available > 0 and available < needed then
             monitor.setTextColor(C_WARN)
             monitor.write("⚠ DEPLETED (" .. available .. ")")
             
-            pcall(function()
+            local ok = pcall(function()
                 ae2.exportItem({name = itemID, count = available}, EXPORT_DIRECTION)
             end)
+            if ok then addDelivery(displayName, available) end
         else
             monitor.setTextColor(C_FAIL)
             monitor.write("✖ VOID")
@@ -214,17 +244,13 @@ while true do
     
     -- Render Pass 1 (Polling indicator visible)
     drawHeader(colony, ae2, true)
-    if hasActiveErrors then
-        drawDebugPanel()
-    end
+    drawDebugPanel()
     
     sleep(0.5)
     
     -- Render Pass 2 (Polling indicator cleared)
     drawHeader(colony, ae2, false)
-    if hasActiveErrors then
-        drawDebugPanel()
-    end
+    drawDebugPanel()
     
     sleep(REFRESH_RATE - 0.5)
 end
