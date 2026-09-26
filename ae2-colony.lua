@@ -62,7 +62,7 @@ local function drawHeader(colony, ae2, isPolling)
     monitor.setBackgroundColor(C_BG)
     monitor.setCursorPos(2, 3)
     monitor.setTextColor(C_TEXT)
-    monitor.write("» QUANTUM LINK (LEFT):    ")
+    monitor.write("» COLONY INTEGRATOR (LEFT): ")
     if colony then
         monitor.setTextColor(C_SUCCESS)
         monitor.write("[SECURE]")
@@ -82,18 +82,18 @@ local function drawHeader(colony, ae2, isPolling)
         monitor.write("[LINK DOWN]")
     end
     
-    -- Tech Grid Dividers
+    -- Tech Grid Dividers (Swapped to safe ASCII equivalents)
     monitor.setCursorPos(1, 6)
     monitor.setTextColor(C_SUB)
-    monitor.write(string.rep("═", w))
+    monitor.write(string.rep("=", w))
     
     monitor.setCursorPos(2, 7)
     monitor.setTextColor(C_HEADER)
-    monitor.write(string.format("%-22s │ %-5s │ %s", "LOGISTICS REGISTRY", "QTY", "MATRIX STATE"))
+    monitor.write(string.format("%-22s | %-5s | %s", "LOGISTICS REGISTRY", "QTY", "MATRIX STATE"))
     
     monitor.setCursorPos(1, 8)
     monitor.setTextColor(C_SUB)
-    monitor.write(string.rep("─", w))
+    monitor.write(string.rep("-", w))
 end
 
 local function drawDebugPanel()
@@ -152,12 +152,12 @@ local function processRequests(colony, ae2)
         
         monitor.setCursorPos(2, y)
         monitor.setTextColor(C_TEXT)
-        monitor.write(string.format("%-22s │ %-5d │ ", displayName, needed))
+        monitor.write(string.format("%-22s | %-5d | ", displayName, needed))
         
         local aeSuccess, aeItem = pcall(ae2.getItem, {name = itemID})
         local available = 0
         if aeSuccess and aeItem then
-            available = tonumber(aeItem.amount) or 0
+            available = tonumber(aeItem.amount) or tonumber(aeItem.count) or 0
         end
         
         if available >= needed then
@@ -186,7 +186,8 @@ end
 -- ====== MAIN LOOP ======
 addLog("Logistics kernel initialized.")
 while true do
-    local colony = peripheral.find("colonyIntegrator")
+    -- HOTFIXED FOR 1.21.1: Swapped registry target identifiers to pure snake_case
+    local colony = peripheral.find("colony_integrator")
     local ae2 = peripheral.find("me_bridge")
     
     drawHeader(colony, ae2, true)
