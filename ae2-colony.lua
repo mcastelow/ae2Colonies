@@ -1,6 +1,6 @@
 -- ATM10 MineColonies to AE2 Bridge Dashboard (Neon Tech Variant)
 -- Optimized for 5x3 Monitor with a Futuristic Dark Base Aesthetic
--- 1.21.1 FIXED SCHEMAS: Engineered to map nested .items[1].name sub-tables
+-- 1.21.1 FIXED SCHEMAS: Engineered to map nested .items sub-tables safely
 
 -- ====== CONFIGURATION ======
 local MONITOR_SIDE = "top"         
@@ -107,7 +107,6 @@ local function drawHeader(colonyPresent, ae2Present)
 end
 
 local function drawDebugPanel()
-    -- STRICT POLICY CHECK: Complete diagnostic tray disappears when errors register as false
     if hasActiveErrors then
         local startY = h - 4
         monitor.setCursorPos(1, startY)
@@ -208,7 +207,6 @@ local function networkWorker()
                 hasActiveErrors = false
                 local tempRequests = {}
                 
-                -- Dynamic inventory system indices
                 local systemItems = {}
                 local listSuccess, listData = pcall(function() return ae2.listItems() or ae2.getItems() end)
                 if listSuccess and listData then
@@ -220,18 +218,28 @@ local function networkWorker()
                 for _, req in ipairs(requests) do
                     sleep(0)
                     
-                    -- TARGETED FIXED VALUE STRIP: Extract structural elements out of modern nested array formats
                     local itemID = "void:null"
-                    if req.items and req.items[1] and req.items[1].name then
-                        itemID = req.items[1].name
+                    local displayName = "Unknown Block"
+                    
+                    -- Deep inspection pattern resolver to unwrap modern 1.21 item collections safely
+                    if req.items and type(req.items) == "table" then
+                        local firstItem = req.items[1] or req.items
+                        if type(firstItem) == "table" then
+                            itemID = firstItem.name or firstItem.id or "void:null"
+                            displayName = firstItem.displayName or firstItem.name or displayName
+                        end
+                    elseif type(req.item) == "table" then
+                        itemID = req.item.name or req.item.id or "void:null"
+                        displayName = req.item.displayName or req.item.name or displayName
                     elseif type(req.item) == "string" then
                         itemID = req.item
+                        displayName = req.name or itemID
                     else
                         itemID = req.id or req.resource or "void:null"
+                        displayName = req.name or itemID
                     end
                     
                     local needed = tonumber(req.count) or tonumber(req.needed) or tonumber(req.amount) or 0
-                    local displayName = (req.items and req.items[1] and req.items[1].displayName) or req.name or itemID
                     
                     if itemID ~= "void:null" and needed > 0 then
                         if not string.find(itemID, ":") then
@@ -244,7 +252,6 @@ local function networkWorker()
                         
                         local linePrefix = string.format("%-22s | %-5d | ", displayName, needed)
                         
-                        -- Query modern AE2 values explicitly
                         local aeItem = systemItems[itemID]
                         local available = 0
                         local craftable = false
@@ -262,7 +269,6 @@ local function networkWorker()
                             end
                         end
                         
-                        -- Execute delivery matrix routines 
                         if available >= needed then
                             table.insert(tempRequests, {text = linePrefix .. "▶ ROUTING", color = C_SUCCESS})
                             
@@ -280,18 +286,19 @@ local function networkWorker()
                                     or ae2.exportItem({name = itemID, count = available}, EXPORT_DIRECTION)
                             end)
                             if ok then addDelivery(displayName, available) end
+                            
                             if craftable then 
                                 pcall(function() 
-                                    ae2.craftItem({item = itemID, count = (needed - available)}) 
-                                        or ae2.craftItem({name = itemID, count = (needed - available)})
+                                    local done = ae2.craftItem({item = itemID, count = (needed - available)})
+                                    if not done then ae2.craftItem({name = itemID, count = (needed - available)}) end
                                 end) 
                             end
                         else
                             if craftable then
                                 table.insert(tempRequests, {text = linePrefix .. "⚒ QUEUED", color = C_SUB})
                                 pcall(function() 
-                                    ae2.craftItem({item = itemID, count = needed})
-                                        or ae2.craftItem({name = itemID, count = needed})
+                                    local done = ae2.craftItem({item = itemID, count = needed})
+                                    if not done then ae2.craftItem({name = itemID, count = needed}) end
                                 end)
                             else
                                 table.insert(tempRequests, {text = linePrefix .. "✖ VOID", color = C_FAIL})
