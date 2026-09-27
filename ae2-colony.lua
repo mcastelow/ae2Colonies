@@ -1,6 +1,6 @@
 -- ATM10 MineColonies to AE2 Bridge Dashboard (Neon Tech Variant)
 -- Optimized for 5x3 Monitor with a Futuristic Dark Base Aesthetic
--- 1.21.1 STABLE CORE: Overhauled query maps targeting modern item structures
+-- 1.21.1 FIXED SCHEMAS: Engineered to map nested .items[1].name sub-tables
 
 -- ====== CONFIGURATION ======
 local MONITOR_SIDE = "top"         
@@ -107,7 +107,7 @@ local function drawHeader(colonyPresent, ae2Present)
 end
 
 local function drawDebugPanel()
-    -- STRICT INSTRUCTION COMPLIANCE: Error dashboard drops off entirely when system errors resolve to false
+    -- STRICT POLICY CHECK: Complete diagnostic tray disappears when errors register as false
     if hasActiveErrors then
         local startY = h - 4
         monitor.setCursorPos(1, startY)
@@ -184,7 +184,7 @@ local function renderLoop()
 end
 
 -- ==========================================
--- THREAD 2: PERIPHERAL INTEGRATOR (MODERN REQ MAPS)
+-- THREAD 2: PERIPHERAL INTEGRATOR (1.21.1 FIXED METRICS)
 -- ==========================================
 local function networkWorker()
     while true do
@@ -208,7 +208,7 @@ local function networkWorker()
                 hasActiveErrors = false
                 local tempRequests = {}
                 
-                -- Download system index and parse item objects cleanly
+                -- Dynamic inventory system indices
                 local systemItems = {}
                 local listSuccess, listData = pcall(function() return ae2.listItems() or ae2.getItems() end)
                 if listSuccess and listData then
@@ -220,36 +220,31 @@ local function networkWorker()
                 for _, req in ipairs(requests) do
                     sleep(0)
                     
+                    -- TARGETED FIXED VALUE STRIP: Extract structural elements out of modern nested array formats
                     local itemID = "void:null"
-                    if type(req.item) == "table" then
-                        itemID = req.item.name or req.item.id or "void:null"
+                    if req.items and req.items[1] and req.items[1].name then
+                        itemID = req.items[1].name
                     elseif type(req.item) == "string" then
                         itemID = req.item
                     else
                         itemID = req.id or req.resource or "void:null"
                     end
                     
-                    if type(itemID) == "table" then itemID = "void:null" end
-                    local needed = tonumber(req.needed) or tonumber(req.amount) or tonumber(req.count) or 0
-                    local displayName = req.name or req.displayName or itemID
+                    local needed = tonumber(req.count) or tonumber(req.needed) or tonumber(req.amount) or 0
+                    local displayName = (req.items and req.items[1] and req.items[1].displayName) or req.name or itemID
                     
                     if itemID ~= "void:null" and needed > 0 then
                         if not string.find(itemID, ":") then
                             itemID = "minecraft:" .. itemID
                         end
                         
-                        local isGUID = string.match(itemID, "%-%x") or #itemID > 40
-                        if isGUID then
-                            displayName = "DOMUM ARCH BLOCK"
-                        else
-                            displayName = displayName:gsub("minecraft:", ""):gsub("domum_ornamentum:", "")
-                            displayName = displayName:gsub("^%l", string.upper):gsub("_", " ")
-                        end
+                        displayName = displayName:gsub("minecraft:", ""):gsub("domum_ornamentum:", "")
+                        displayName = displayName:gsub("^%l", string.upper):gsub("_", " ")
                         if #displayName > 22 then displayName = displayName:sub(1, 19) .. "..." end
                         
                         local linePrefix = string.format("%-22s | %-5d | ", displayName, needed)
                         
-                        -- Query modern values explicitly via matching fallback schemas
+                        -- Query modern AE2 values explicitly
                         local aeItem = systemItems[itemID]
                         local available = 0
                         local craftable = false
@@ -267,7 +262,7 @@ local function networkWorker()
                             end
                         end
                         
-                        -- Execute delivery block handling arrays 
+                        -- Execute delivery matrix routines 
                         if available >= needed then
                             table.insert(tempRequests, {text = linePrefix .. "▶ ROUTING", color = C_SUCCESS})
                             
@@ -299,19 +294,7 @@ local function networkWorker()
                                         or ae2.craftItem({name = itemID, count = needed})
                                 end)
                             else
-                                -- Blind export pipeline retry
-                                local bruteForceAmt = 0
-                                pcall(function()
-                                    bruteForceAmt = ae2.exportItem({item = itemID, count = needed}, EXPORT_DIRECTION)
-                                        or ae2.exportItem({name = itemID, count = needed}, EXPORT_DIRECTION) or 0
-                                end)
-                                
-                                if type(bruteForceAmt) == "number" and bruteForceAmt > 0 then
-                                    table.insert(tempRequests, {text = linePrefix .. "▶ ROUTING", color = C_SUCCESS})
-                                    addDelivery(displayName, bruteForceAmt)
-                                else
-                                    table.insert(tempRequests, {text = linePrefix .. "✖ VOID", color = C_FAIL})
-                                end
+                                table.insert(tempRequests, {text = linePrefix .. "✖ VOID", color = C_FAIL})
                             end
                         end
                     end
