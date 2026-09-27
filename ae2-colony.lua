@@ -143,7 +143,6 @@ local function drawDebugPanel()
         end
     end
 end
-
 -- ==========================================
 -- THREAD 1: THE RENDERING ENGINE
 -- ==========================================
@@ -184,7 +183,7 @@ local function renderLoop()
 end
 
 -- ==========================================
--- THREAD 2: THE PERIPHERAL INTEGRATOR WITH AUTO-CRAFTING ENGINE
+-- THREAD 2: THE PERIPHERAL INTEGRATOR WITH STRING-MATCH OVERHAUL
 -- ==========================================
 local function networkWorker()
     while true do
@@ -210,6 +209,15 @@ local function networkWorker()
             else
                 hasActiveErrors = false
                 local tempRequests = {}
+                
+                -- Optimization: Cache item registry as an array of string items to prevent nested filter table mismatches
+                local systemItems = {}
+                local listSuccess, allItems = pcall(ae2.listItems)
+                if listSuccess and allItems then
+                    for _, item in ipairs(allItems) do
+                        if item.name then systemItems[item.name] = item end
+                    end
+                end
                 
                 for _, req in ipairs(requests) do
                     sleep(0)
@@ -238,16 +246,20 @@ local function networkWorker()
                         if #displayName > 22 then displayName = displayName:sub(1, 19) .. "..." end
                         
                         local linePrefix = string.format("%-22s | %-5d | ", displayName, needed)
-                        local available = 0
+                        
+                        -- Match against cached list strings instead of running slow and buggy .getItem() tables
+                        local aeItem = systemItems[itemID]
+                        local available = aeItem and (tonumber(aeItem.amount) or tonumber(aeItem.count)) or 0
                         local craftable = false
                         
-                        local aeSuccess, aeItem = pcall(function()
-                            return ae2.getItem({name = itemID})
-                        end)
-                        
-                        if aeSuccess and aeItem then
-                            available = tonumber(aeItem.amount) or tonumber(aeItem.count) or 0
+                        if aeItem then
                             craftable = aeItem.isCraftable or false
+                        else
+                            -- Alternate check: If item has 0 in stock, see if it has a pattern
+                            local checkSuccess, checkItem = pcall(function() return ae2.getItem({name = itemID}) end)
+                            if checkSuccess and checkItem then
+                                craftable = checkItem.isCraftable or false
+                            end
                         end
                         
                         if available >= needed then
@@ -264,16 +276,15 @@ local function networkWorker()
                             end)
                             if ok then addDelivery(displayName, available) end
                             
-                            -- Trigger sub-assembly job if a recipe pattern is saved
                             if craftable then
                                 pcall(function() ae2.craftItem({name = itemID, count = (needed - available)}) end)
                             end
                         else
-                            -- Handshake processing for 0 items available
                             if craftable then
                                 table.insert(tempRequests, {text = linePrefix .. "⚒ QUEUED", color = C_SUB})
                                 pcall(function() ae2.craftItem({name = itemID, count = needed}) end)
                             else
+                                -- Final blind export fallback run
                                 local bruteForceExported = 0
                                 pcall(function()
                                     bruteForceExported = ae2.exportItem({name = itemID, count = needed}, EXPORT_DIRECTION) or 0
