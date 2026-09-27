@@ -108,7 +108,6 @@ local function drawHeader(colony, ae2, isPolling)
 end
 
 local function drawDebugPanel()
-    -- Draw Diagnostics if there is an error
     if hasActiveErrors then
         local startY = h - 4
         monitor.setCursorPos(1, startY)
@@ -126,7 +125,6 @@ local function drawDebugPanel()
                 monitor.write(log)
             end
         end
-    -- Draw Delivery Feed if everything is working normally
     elseif #deliveryHistory > 0 then
         local startY = h - 5
         monitor.setCursorPos(1, startY)
@@ -156,7 +154,6 @@ local function processRequests(colony, ae2)
     end
     
     local y = 9
-    -- Dynamic screen buffer size depending on active visual panels
     local hasPanel = hasActiveErrors or (#deliveryHistory > 0)
     local maxDisplayY = hasPanel and (h - 7) or (h - 1)
     
@@ -168,6 +165,9 @@ local function processRequests(colony, ae2)
     end
     
     for _, req in ipairs(requests) do
+        -- Explicit tick-yield inside loops to stop ATM10 thread crashes
+        sleep(0)
+        
         if y > maxDisplayY then 
             monitor.setCursorPos(2, y)
             monitor.setTextColor(C_WARN)
@@ -179,7 +179,6 @@ local function processRequests(colony, ae2)
         local needed = tonumber(req.needed) or 0
         local displayName = req.name or itemID
         
-        -- Tech layout formatting for names
         displayName = displayName:gsub("minecraft:", ""):gsub("domum_ornamentum:", "")
         displayName = displayName:gsub("^%l", string.upper):gsub("_", " ")
         if #displayName > 22 then displayName = displayName:sub(1, 19) .. "..." end
@@ -188,7 +187,6 @@ local function processRequests(colony, ae2)
         monitor.setTextColor(C_TEXT)
         monitor.write(string.format("%-22s | %-5d | ", displayName, needed))
         
-        -- Isolating ae2.getItem inside a strict timeout block
         local available = 0
         local aeSuccess, aeItem = pcall(function()
             return ae2.getItem({name = itemID})
@@ -197,7 +195,6 @@ local function processRequests(colony, ae2)
         if aeSuccess and aeItem then
             available = tonumber(aeItem.amount) or tonumber(aeItem.count) or 0
         elseif not aeSuccess then
-            -- If the AE2 peripheral stalls out, abort item formatting to prevent freezing
             monitor.setTextColor(C_WARN)
             monitor.write("⚠ AE2 TIMEOUT")
             y = y + 1
@@ -230,14 +227,20 @@ local function processRequests(colony, ae2)
     end
 end
 
--- ====== MAIN LOOP ======
+-- ====== SAFE INITIALIZATION AND RUNNER ======
 addLog("Logistics kernel initialized.")
+
+-- Force an initial yield so ComputerCraft is settled in its loop context
+sleep(0.5)
+
 while true do
-    -- HOTFIXED FOR 1.21.1: Swapped registry target identifiers to pure snake_case
-    local colony = peripheral.find("colony_integrator")
-    local ae2 = peripheral.find("me_bridge")
+    local colony = nil
+    local ae2 = nil
     
-    -- Reset error flag each loop iteration
+    -- Wrap peripheral parsing safely to avoid thread locks
+    pcall(function() colony = peripheral.find("colony_integrator") end)
+    pcall(function() ae2 = peripheral.find("me_bridge") end)
+    
     hasActiveErrors = false
     
     if not colony or not ae2 then
@@ -252,13 +255,11 @@ while true do
         end
     end
     
-    -- Render Pass 1 (Polling indicator visible)
     drawHeader(colony, ae2, true)
     drawDebugPanel()
     
     sleep(0.5)
     
-    -- Render Pass 2 (Polling indicator cleared)
     drawHeader(colony, ae2, false)
     drawDebugPanel()
     
