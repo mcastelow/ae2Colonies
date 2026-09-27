@@ -1,6 +1,6 @@
 -- ATM10 MineColonies to AE2 Bridge Dashboard (Neon Tech Variant)
 -- Optimized for 5x3 Monitor with a Futuristic Dark Base Aesthetic
--- 1.21.1 FIXED CORES: Engineered to strictly extract exact nested counts
+-- 1.21.1 HYPER-STABLE FLAT DISPATCH ENGINE
 
 -- ====== CONFIGURATION ======
 local MONITOR_SIDE = "top"         
@@ -108,7 +108,7 @@ local function drawHeader()
 end
 
 local function drawDebugPanel()
-    -- HIDES ENTIRELY WHEN EVERYTHING IS HEALTHY: Only displays if active exceptions trigger true
+    -- ALWAYS HIDES LOG FEED UNLESS AN ACTIVE CRASH OR DISCONNECT EVENTS IS OCCURRING
     if hasActiveErrors then
         local startY = h - 4
         monitor.setCursorPos(1, startY)
@@ -201,33 +201,22 @@ local function networkWorker()
             else
                 hasActiveErrors = false
                 local tempRequests = {}
-                print(":: Polled Network: " .. #requests .. " item frames at " .. os.date("%H:%M:%S"))
+                print(":: Polled Network: " .. #requests .. " groups at " .. os.date("%H:%M:%S"))
                 
                 for _, req in ipairs(requests) do
-                    sleep(0.02)
-                    
-                    -- Explicitly extract top-level tracking parameters before hitting the child arrays
-                    local baseNeeded = tonumber(req.count) or tonumber(req.needed) or tonumber(req.amount) or 0
+                    sleep(0.01)
                     
                     local extractedItems = {}
                     if req.items and type(req.items) == "table" then
-                        local elementsFound = false
                         for _, subItem in pairs(req.items) do
-                            if type(subItem) == "table" then
-                                table.insert(extractedItems, subItem)
-                                elementsFound = true
-                            end
+                            if type(subItem) == "table" then table.insert(extractedItems, subItem) end
                         end
-                        if not elementsFound then table.insert(extractedItems, req.items) end
+                        if #extractedItems == 0 then table.insert(extractedItems, req.items) end
                     elseif type(req.item) == "table" then
-                        local elementsFound = false
                         for _, subItem in pairs(req.item) do
-                            if type(subItem) == "table" then
-                                table.insert(extractedItems, subItem)
-                                elementsFound = true
-                            end
+                            if type(subItem) == "table" then table.insert(extractedItems, subItem) end
                         end
-                        if not elementsFound then table.insert(extractedItems, req.item) end
+                        if #extractedItems == 0 then table.insert(extractedItems, req.item) end
                     else
                         table.insert(extractedItems, req)
                     end
@@ -238,28 +227,17 @@ local function networkWorker()
                         local needed = 0
                         
                         if type(activeItem) == "table" then
-                            local subNode = activeItem.item or activeItem
-                            if type(subNode) == "table" then
-                                itemID = subNode.name or subNode.id or "void:null"
-                                displayName = subNode.displayName or subNode.name or displayName
-                            elseif type(subNode) == "string" then
-                                itemID = subNode
-                                displayName = activeItem.name or itemID
-                            end
-                            
+                            itemID = activeItem.name or activeItem.id or (activeItem.item and activeItem.item.name) or "void:null"
+                            displayName = activeItem.displayName or activeItem.name or itemID
                             needed = tonumber(activeItem.count) or tonumber(activeItem.needed) or tonumber(activeItem.amount) or 0
                         elseif type(activeItem) == "string" then
                             itemID = activeItem
                             displayName = itemID
                         end
                         
-                        -- CRITICAL UPDATE: Handle nested array field evaluation fallbacks explicitly
-                        if needed == 0 or needed == 1 then
-                            if baseNeeded > 0 then
-                                needed = baseNeeded
-                            else
-                                needed = tonumber(req.count) or tonumber(req.needed) or tonumber(req.amount) or 1
-                            end
+                        -- CRITICAL FALLBACK CHAIN: Trace true total counts out of upper level scopes safely
+                        if needed == 0 then
+                            needed = tonumber(req.count) or tonumber(req.needed) or tonumber(req.amount) or 0
                         end
                         
                         if itemID ~= "void:null" and needed > 0 then
@@ -272,43 +250,42 @@ local function networkWorker()
                             local available = 0
                             local craftable = false
                             
-                            local checkSuccess, checkItem = pcall(function() 
-                                return ae2.getItem({item = itemID}) or ae2.getItem({name = itemID}) 
-                            end)
+                            -- MODERN 1.21 OBJECT LOOKUP UNWRAPPER
+                            local checkSuccess, checkItem = pcall(function() return ae2.getItem({name = itemID}) end)
                             if checkSuccess and checkItem then
                                 available = tonumber(checkItem.amount) or tonumber(checkItem.count) or 0
                                 craftable = checkItem.isCraftable or false
+                            else
+                                -- Flat string alternative backup query parameter
+                                local altSuccess, altItem = pcall(function() return ae2.getItem(itemID) end)
+                                if altSuccess and altItem then
+                                    available = tonumber(altItem.amount) or tonumber(altItem.count) or 0
+                                    craftable = altItem.isCraftable or false
+                                end
                             end
                             
                             if available >= needed then
                                 table.insert(tempRequests, {text = linePrefix .. "▶ ROUTING", color = C_SUCCESS})
                                 
-                                -- EXPLICIT 1.21 EXPORT STRUCTURE BLOCK: Passes absolute values directly to the wrapper
-                                local ok, amt = pcall(function() return ae2.exportItem({name = itemID, count = needed}, EXPORT_DIRECTION) end)
-                                if not ok or not amt or amt == 0 or amt == true then
-                                    ok, amt = pcall(function() return ae2.exportItem({item = itemID, count = needed}, EXPORT_DIRECTION) end)
-                                end
-                                
+                                -- CRITICAL FLAT DISPATCH OVERHAUL: Send parameters as individual values, not a dictionary object
+                                local ok, amt = pcall(function() return ae2.exportItem(itemID, needed, EXPORT_DIRECTION) end)
                                 if ok then addDelivery(displayName, needed) end
+                                
                             elseif available > 0 and available < needed then
                                 table.insert(tempRequests, {text = linePrefix .. "⚠ DEPLETED", color = C_WARN})
                                 
-                                local ok, amt = pcall(function() return ae2.exportItem({name = itemID, count = available}, EXPORT_DIRECTION) end)
-                                if not ok or not amt or amt == 0 or amt == true then
-                                    ok, amt = pcall(function() return ae2.exportItem({item = itemID, count = available}, EXPORT_DIRECTION) end)
-                                end
-                                
+                                local ok, amt = pcall(function() return ae2.exportItem(itemID, available, EXPORT_DIRECTION) end)
                                 if ok then 
                                     addDelivery(displayName, available)
                                     if craftable then 
                                         local craftShortage = needed - available
-                                        pcall(function() ae2.craftItem({name = itemID, count = craftShortage}) end) 
+                                        pcall(function() ae2.craftItem(itemID, craftShortage) end) 
                                     end
                                 end
                             else
                                 if craftable then
                                     table.insert(tempRequests, {text = linePrefix .. "⚒ QUEUED", color = C_SUB})
-                                    pcall(function() ae2.craftItem({name = itemID, count = needed}) end)
+                                    pcall(function() ae2.craftItem(itemID, needed) end)
                                 else
                                     table.insert(tempRequests, {text = linePrefix .. "✖ VOID", color = C_FAIL})
                                 end
