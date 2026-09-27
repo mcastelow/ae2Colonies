@@ -1,6 +1,6 @@
 -- ATM10 MineColonies to AE2 Bridge Dashboard (Neon Tech Variant)
 -- Optimized for 5x3 Monitor with a Futuristic Dark Base Aesthetic
--- DEBUG RUNNER EDITION: Outputs raw API tables to the Computer Terminal
+-- VERBOSE ENGINE: Tailored to expose background deadlocks
 
 -- ====== CONFIGURATION ======
 local MONITOR_SIDE = "top"         
@@ -183,18 +183,21 @@ local function renderLoop()
 end
 
 -- ==========================================
--- THREAD 2: PERIPHERAL INTEGRATOR + TERMINAL LOGGER
+-- THREAD 2: PERIPHERAL INTEGRATOR (PROBE EXPORT MODE)
 -- ==========================================
 local function networkWorker()
     while true do
+        print("[TRACE] Locating Peripherals...")
         local colony = peripheral.find("colony_integrator")
         local ae2 = peripheral.find("me_bridge")
         
         if not colony or not ae2 then
             hasActiveErrors = true
             currentRequests = {}
+            print("[WARN] Peripherals Missing. Waiting...")
             sleep(REFRESH_RATE)
         else
+            print("[TRACE] Fetching Colony Requests...")
             isPolling = true
             local success, requests = pcall(colony.getRequests)
             isPolling = false
@@ -202,27 +205,15 @@ local function networkWorker()
             if not success or not requests then
                 hasActiveErrors = true
                 currentRequests = {}
+                print("[ERROR] Colony API Crashed!")
                 sleep(REFRESH_RATE)
             else
                 hasActiveErrors = false
                 local tempRequests = {}
-                
-                -- Clear terminal screen to show readable real-time loop telemetry
-                term.clear()
-                term.setCursorPos(1,1)
-                print("=== LIVE DIAGNOSTIC TRACE ===")
-                
-                -- Parse and cache system list items
-                local systemItems = {}
-                local listSuccess, allItems = pcall(ae2.listItems)
-                if listSuccess and allItems then
-                    for _, item in ipairs(allItems) do
-                        if item.name then systemItems[item.name] = item end
-                    end
-                end
+                print("[TRACE] Active Requests Found: " .. #requests)
                 
                 for _, req in ipairs(requests) do
-                    sleep(0)
+                    sleep(0.1) -- Forced context yield to prevent engine deadlocks
                     
                     local itemID = "void:null"
                     if type(req.item) == "table" then
@@ -234,7 +225,6 @@ local function networkWorker()
                     end
                     
                     if type(itemID) == "table" then itemID = "void:null" end
-                    
                     local needed = tonumber(req.needed) or tonumber(req.amount) or tonumber(req.count) or 0
                     local displayName = req.name or req.displayName or itemID
                     
@@ -243,9 +233,7 @@ local function networkWorker()
                             itemID = "minecraft:" .. itemID
                         end
                         
-                        -- PRINT TELEMETRY DATA TO THE COMPUTER CASING TERMINAL
-                        print("\n[MC ID]: " .. tostring(itemID))
-                        print(" -> Needed Qty: " .. tostring(needed))
+                        print("[TARGET] processing item: " .. itemID)
                         
                         displayName = displayName:gsub("minecraft:", ""):gsub("domum_ornamentum:", "")
                         displayName = displayName:gsub("^%l", string.upper):gsub("_", " ")
@@ -253,44 +241,38 @@ local function networkWorker()
                         
                         local linePrefix = string.format("%-22s | %-5d | ", displayName, needed)
                         
-                        local aeItem = systemItems[itemID]
-                        local available = 0
-                        local craftable = false
+                        -- DIRECT ROUTING PROBE: Skip broken lookup checks entirely and attempt to push items
+                        local exportSuccess, exportedAmt = pcall(function()
+                            return ae2.exportItem({name = itemID, count = needed}, EXPORT_DIRECTION)
+                        end)
                         
-                        if aeItem then
-                            print(" -> AE Cache Match: TRUE")
-                            -- Print out all fields inside the item payload to see exact key names
-                            local keyList = ""
-                            for k, v in pairs(aeItem) do
-                                keyList = keyList .. k .. "=" .. tostring(v) .. " "
+                        -- Analyze the response payload directly from the ME block engine
+                        if exportSuccess and exportedAmt and type(exportedAmt) == "number" and exportedAmt > 0 then
+                            print(" -> Export Success! Sent: " .. exportedAmt)
+                            if exportedAmt >= needed then
+                                table.insert(tempRequests, {text = linePrefix .. "▶ ROUTING", color = C_SUCCESS})
+                                addDelivery(displayName, needed)
+                            else
+                                table.insert(tempRequests, {text = linePrefix .. "⚠ DEPLETED ("..exportedAmt..")", color = C_WARN})
+                                addDelivery(displayName, exportedAmt)
+                                -- Trigger auto-crafting fallback path directly if available
+                                pcall(function() ae2.craftItem({name = itemID, count = (needed - exportedAmt)}) end)
                             end
-                            print(" -> Keys found: " .. keyList)
-                            
-                            available = tonumber(aeItem.count) or tonumber(aeItem.amount) or 0
-                            craftable = aeItem.isCraftable or false
                         else
-                            print(" -> AE Cache Match: FALSE (Item missing in listItems)")
-                            -- Fallback table query logging
+                            -- If direct export failed, check if we can invoke a crafting assembly sequence
+                            print(" -> Export returned zero. Probing Crafting pattern...")
+                            local craftable = false
                             local checkSuccess, checkItem = pcall(function() return ae2.getItem({name = itemID}) end)
                             if checkSuccess and checkItem then
-                                print(" -> Fallback getItem Match: TRUE")
-                                available = tonumber(checkItem.count) or tonumber(checkItem.amount) or 0
                                 craftable = checkItem.isCraftable or false
                             end
-                        end
-                        
-                        if available >= needed then
-                            table.insert(tempRequests, {text = linePrefix .. "▶ ROUTING", color = C_SUCCESS})
-                            pcall(function() ae2.exportItem({name = itemID, count = needed}, EXPORT_DIRECTION) end)
-                        elseif available > 0 and available < needed then
-                            table.insert(tempRequests, {text = linePrefix .. "⚠ DEPLETED (" .. available .. ")", color = C_WARN})
-                            pcall(function() ae2.exportItem({name = itemID, count = available}, EXPORT_DIRECTION) end)
-                            if craftable then pcall(function() ae2.craftItem({name = itemID, count = (needed - available)}) end) end
-                        else
+                            
                             if craftable then
+                                print(" -> Pattern found! Sending to CPU...")
                                 table.insert(tempRequests, {text = linePrefix .. "⚒ QUEUED", color = C_SUB})
                                 pcall(function() ae2.craftItem({name = itemID, count = needed}) end)
                             else
+                                print(" -> No stock, no pattern available.")
                                 table.insert(tempRequests, {text = linePrefix .. "✖ VOID", color = C_FAIL})
                             end
                         end
@@ -298,6 +280,7 @@ local function networkWorker()
                 end
                 
                 currentRequests = tempRequests
+                print("[TRACE] Loop completed. Sleeping...")
                 sleep(REFRESH_RATE)
             end
         end
@@ -305,5 +288,5 @@ local function networkWorker()
 end
 
 -- ====== CONCURRENCY EXECUTIVE KERNEL ======
-addLog("Logistics kernel initialized.")
+print("Booting Parallel Pipelines...")
 parallel.waitForAny(renderLoop, networkWorker)
