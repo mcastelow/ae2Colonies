@@ -184,7 +184,7 @@ local function renderLoop()
 end
 
 -- ==========================================
--- THREAD 2: THE PERIPHERAL INTEGRATOR (FIXED METRIC SCHEMA)
+-- THREAD 2: THE PERIPHERAL INTEGRATOR (FIXED EXPORT PAYLOAD)
 -- ==========================================
 local function networkWorker()
     while true do
@@ -214,7 +214,6 @@ local function networkWorker()
                 for _, req in ipairs(requests) do
                     sleep(0)
                     
-                    -- Extract fields properly by verifying table structures or alternative naming
                     local itemID = "void:null"
                     if type(req.item) == "table" and req.item.name then
                         itemID = req.item.name
@@ -227,7 +226,6 @@ local function networkWorker()
                     local needed = tonumber(req.needed) or tonumber(req.amount) or tonumber(req.count) or 0
                     local displayName = req.name or req.displayName or itemID
                     
-                    -- Only display and process valid rows where a physical item is actively requested
                     if itemID ~= "void:null" and needed > 0 then
                         displayName = displayName:gsub("minecraft:", ""):gsub("domum_ornamentum:", "")
                         displayName = displayName:gsub("^%l", string.upper):gsub("_", " ")
@@ -236,8 +234,9 @@ local function networkWorker()
                         local linePrefix = string.format("%-22s | %-5d | ", displayName, needed)
                         local available = 0
                         
+                        -- Modern advanced peripherals object lookup fallback
                         local aeSuccess, aeItem = pcall(function()
-                            return ae2.getItem({name = itemID})
+                            return ae2.getItem({item = itemID}) or ae2.getItem({name = itemID})
                         end)
                         
                         if aeSuccess and aeItem then
@@ -246,14 +245,20 @@ local function networkWorker()
                         
                         if available >= needed then
                             table.insert(tempRequests, {text = linePrefix .. "▶ ROUTING", color = C_TEXT})
+                            
+                            -- MODERN PAYLOAD STRUCT: Uses the correct nested item filter formatting
                             local ok = pcall(function()
-                                ae2.exportItem({name = itemID, count = needed}, EXPORT_DIRECTION)
+                                return ae2.exportItem({item = itemID, count = needed}, EXPORT_DIRECTION) 
+                                    or ae2.exportItemToPeripheral({item = itemID, count = needed}, EXPORT_DIRECTION)
                             end)
                             if ok then addDelivery(displayName, needed) end
+                            
                         elseif available > 0 and available < needed then
                             table.insert(tempRequests, {text = linePrefix .. "⚠ DEPLETED (" .. available .. ")", color = C_TEXT})
+                            
                             local ok = pcall(function()
-                                ae2.exportItem({name = itemID, count = available}, EXPORT_DIRECTION)
+                                return ae2.exportItem({item = itemID, count = available}, EXPORT_DIRECTION)
+                                    or ae2.exportItemToPeripheral({item = itemID, count = available}, EXPORT_DIRECTION)
                             end)
                             if ok then addDelivery(displayName, available) end
                         else
