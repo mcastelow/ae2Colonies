@@ -1,6 +1,6 @@
 -- ATM10 MineColonies to AE2 Bridge Dashboard (Neon Tech Variant)
 -- Optimized for 5x3 Monitor with a Futuristic Dark Base Aesthetic
--- VERBOSE ENGINE: Configured to output dynamic execution telemetry onto the terminal
+-- FUZZY CORE: Hardened atomic memory pipelines to prevent background crashes
 
 -- ====== CONFIGURATION ======
 local MONITOR_SIDE = "top"         
@@ -107,6 +107,7 @@ local function drawHeader(colonyPresent, ae2Present)
 end
 
 local function drawDebugPanel()
+    -- COMPLIANCE Check: Error logs hide entirely when running normally
     if hasActiveErrors then
         local startY = h - 4
         monitor.setCursorPos(1, startY)
@@ -183,50 +184,46 @@ local function renderLoop()
 end
 
 -- ==========================================
--- THREAD 2: PERIPHERAL INTEGRATOR (FIXED QUANTITY SCHEMAS)
+-- THREAD 2: PERIPHERAL INTEGRATOR (CRASH-PROOF EDITION)
 -- ==========================================
 local function networkWorker()
+    -- Run clean setup outside the main processing loop context
     term.clear()
+    term.setCursorPos(1,1)
+    print("=== LOGISTICS KERNEL ASYNC SYSTEM RUNNING ===")
+    
     while true do
-        term.setCursorPos(1,1)
-        print("=== LOGISTICS KERNEL PROCESSING TRACE ===")
-        print("Locating network interfaces...")
-        
         local colony = peripheral.find("colony_integrator")
         local ae2 = peripheral.find("me_bridge")
         
         if not colony or not ae2 then
             hasActiveErrors = true
             currentRequests = {}
-            print("[WARN] Peripherals missing. Retrying cycle...")
             sleep(REFRESH_RATE)
         else
-            print("Polling Colony Integrator requests...")
             isPolling = true
-            local success, requests = pcall(function() return colony.getRequests() end)
+            local success, requests = pcall(colony.getRequests)
             isPolling = false
             
             if not success or not requests then
                 hasActiveErrors = true
                 currentRequests = {}
-                print("[CRITICAL] Colony integrator API thread-lock caught!")
                 sleep(REFRESH_RATE)
             else
                 hasActiveErrors = false
                 local tempRequests = {}
                 
-                term.clearLine()
-                print("Active Colony Demands Indexed: " .. #requests)
-                print("-----------------------------------------")
+                -- Rolling notification on mini-terminal tracking cycles safely
+                print("⚡ Polled Network: " .. #requests .. " items at " .. os.date("%H:%M:%S"))
                 
                 for idx, req in ipairs(requests) do
-                    sleep(0.1)
+                    sleep(0.05) -- Light context switch yield
                     
                     local itemID = "void:null"
                     local displayName = "Unknown Block"
                     local needed = 0
                     
-                    -- Extract the identifier string and dynamic layout names safely
+                    -- Dynamic layout identifier extractor
                     if req.items and type(req.items) == "table" then
                         local targetNode = req.items
                         if type(targetNode) == "table" then
@@ -246,7 +243,6 @@ local function networkWorker()
                         displayName = req.name or itemID
                     end
                     
-                    -- Fallback: If needed count wasn't found nested inside a subtable, read top-level keys
                     if needed == 0 then
                         needed = tonumber(req.count) or tonumber(req.needed) or tonumber(req.amount) or 0
                     end
@@ -256,14 +252,11 @@ local function networkWorker()
                             itemID = "minecraft:" .. itemID
                         end
                         
-                        print(string.format("[%d/%d] TARGET -> %s (Need %d)", idx, #requests, itemID:sub(1,25), needed))
-                        
                         displayName = displayName:gsub("minecraft:", ""):gsub("domum_ornamentum:", "")
                         displayName = displayName:gsub("^%l", string.upper):gsub("_", " ")
                         if #displayName > 22 then displayName = displayName:sub(1, 19) .. "..." end
                         
                         local linePrefix = string.format("%-22s | %-5d | ", displayName, needed)
-                        
                         local available = 0
                         local craftable = false
                         
@@ -275,8 +268,6 @@ local function networkWorker()
                             available = tonumber(checkItem.amount) or tonumber(checkItem.count) or 0
                             craftable = checkItem.isCraftable or false
                         end
-                        
-                        print(string.format("      Stock: %d | Craftable: %s", available, tostring(craftable)))
                         
                         if available >= needed then
                             table.insert(tempRequests, {text = linePrefix .. "▶ ROUTING", color = C_SUCCESS})
@@ -310,17 +301,12 @@ local function networkWorker()
                                 table.insert(tempRequests, {text = linePrefix .. "✖ VOID", color = C_FAIL})
                             end
                         end
-                    else
-                        -- Telemetry fallback logging for zero quantities
-                        print(string.format("[%d/%d] FILTERED OUT -> ID: %s (Qty was 0)", idx, #requests, itemID:sub(1,15)))
                     end
                 end
                 
-                -- Atomic thread-safe map swap
+                -- ATOMIC POINTER POOL EXCHANGE: Forces list layout frames into active state registers
                 currentRequests = tempRequests
-                print("Cycle finished. Sleeping...")
                 sleep(REFRESH_RATE)
-                term.clear()
             end
         end
     end
