@@ -1,6 +1,6 @@
 -- ATM10 MineColonies to AE2 Bridge Dashboard (Neon Tech Variant)
 -- Optimized for 5x3 Monitor with a Futuristic Dark Base Aesthetic
--- 1.21.1 FIXED CORES: Engineered to strictly extract exact nested counts
+-- Block 1 of 3: System Variables and Configuration Vectors
 
 -- ====== CONFIGURATION ======
 local MONITOR_SIDE = "top"         
@@ -51,6 +51,8 @@ local C_SUCCESS = colors.lime        -- Plasma Green (Active/Fulfilling)
 local C_WARN    = colors.orange      -- Quantum Amber (Partial/Pending)
 local C_FAIL    = colors.red         -- Critical Red (Missing/Offline)
 -- ==========================================
+-- Block 2 of 3: User Interface Rendering Engine
+
 local function drawHeader()
     monitor.setBackgroundColor(C_BG)
     monitor.clear()
@@ -108,7 +110,6 @@ local function drawHeader()
 end
 
 local function drawDebugPanel()
-    -- HIDES ENTIRELY WHEN WORKING NORMALLY: Only shows up on an active error flag status
     if hasActiveErrors then
         local startY = h - 4
         monitor.setCursorPos(1, startY)
@@ -175,6 +176,8 @@ local function renderLoop()
         sleep(0.5)
     end
 end
+-- Block 3 of 3: Core Extraction Routines and Flat Argument Dispatchers
+
 local function networkWorker()
     term.clear()
     while true do
@@ -201,7 +204,7 @@ local function networkWorker()
             else
                 hasActiveErrors = false
                 local tempRequests = {}
-                print(":: Polled Network: " .. #requests .. " item frames at " .. os.date("%H:%M:%S"))
+                print(":: Polled Network: " .. #requests .. " groups at " .. os.date("%H:%M:%S"))
                 
                 for _, req in ipairs(requests) do
                     sleep(0.01)
@@ -226,12 +229,9 @@ local function networkWorker()
                         local displayName = "Unknown Block"
                         local needed = 0
                         
-                        -- DEEP TARGETED SCHEMA RECOVERY: Extract fields precisely matching the 1.21.1 layouts
                         if type(activeItem) == "table" then
                             itemID = activeItem.name or activeItem.id or (activeItem.item and activeItem.item.name) or "void:null"
                             displayName = activeItem.displayName or activeItem.name or itemID
-                            
-                            -- Dig out counts from various nested property names
                             needed = tonumber(activeItem.count) or tonumber(activeItem.needed) or tonumber(activeItem.amount) or 0
                             if (needed == 0 or needed == 1) and activeItem.item and type(activeItem.item) == "table" then
                                 needed = tonumber(activeItem.item.count) or tonumber(activeItem.item.needed) or tonumber(activeItem.item.amount) or needed
@@ -241,9 +241,8 @@ local function networkWorker()
                             displayName = itemID
                         end
                         
-                        -- High-level scope structural count backup
-                        if needed == 0 or needed == 1 then
-                            needed = tonumber(req.count) or tonumber(req.needed) or tonumber(req.amount) or needed
+                        if needed == 0 then
+                            needed = tonumber(req.count) or tonumber(req.needed) or tonumber(req.amount) or 0
                         end
                         
                         if itemID ~= "void:null" and needed > 0 then
@@ -256,8 +255,8 @@ local function networkWorker()
                             local available = 0
                             local craftable = false
                             
-                            -- STANDARD FLAT STRING IDENTIFICATION MATCHES
-                            local checkSuccess, checkItem = pcall(function() return ae2.getItem({name = itemID}) end)
+                            -- MODERN 1.21 OBJECT LOOKUP UNWRAPPER
+                            local checkSuccess, checkItem = pcall(function() return ae2.getItem({item = itemID}) end)
                             if checkSuccess and checkItem then
                                 available = tonumber(checkItem.amount) or tonumber(checkItem.count) or 0
                                 craftable = checkItem.isCraftable or false
@@ -272,25 +271,33 @@ local function networkWorker()
                             if available >= needed then
                                 table.insert(tempRequests, {text = linePrefix .. "▶ ROUTING", color = C_SUCCESS})
                                 
-                                -- 1.21.1 MANDATORY FLAT DISPATCH: Strip dict tables entirely, pass variables as raw args
+                                -- 1.21 HYPER-STABLE DUAL EXECUTION PROBE
                                 local ok = pcall(function() return ae2.exportItem(itemID, needed, EXPORT_DIRECTION) end)
+                                if not ok then
+                                    ok = pcall(function() return ae2.exportItem({item = itemID, count = needed}, EXPORT_DIRECTION) end)
+                                end
                                 if ok then addDelivery(displayName, needed) end
                                 
                             elseif available > 0 and available < needed then
                                 table.insert(tempRequests, {text = linePrefix .. "⚠ DEPLETED", color = C_WARN})
                                 
                                 local ok = pcall(function() return ae2.exportItem(itemID, available, EXPORT_DIRECTION) end)
+                                if not ok then
+                                    ok = pcall(function() return ae2.exportItem({item = itemID, count = available}, EXPORT_DIRECTION) end)
+                                end
                                 if ok then 
                                     addDelivery(displayName, available)
                                     if craftable then 
                                         local craftShortage = needed - available
                                         pcall(function() return ae2.craftItem(itemID, craftShortage) end) 
+                                        pcall(function() return ae2.craftItem({item = itemID, count = craftShortage}) end)
                                     end
                                 end
                             else
                                 if craftable then
                                     table.insert(tempRequests, {text = linePrefix .. "⚒ QUEUED", color = C_SUB})
                                     pcall(function() return ae2.craftItem(itemID, needed) end)
+                                    pcall(function() return ae2.craftItem({item = itemID, count = needed}) end)
                                 else
                                     table.insert(tempRequests, {text = linePrefix .. "✖ VOID", color = C_FAIL})
                                 end
