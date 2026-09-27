@@ -183,7 +183,7 @@ local function renderLoop()
 end
 
 -- ==========================================
--- THREAD 2: THE PERIPHERAL INTEGRATOR WITH STRING-MATCH OVERHAUL
+-- THREAD 2: THE PERIPHERAL INTEGRATOR (1.21.1 COMPATIBLE VALUE KEYS)
 -- ==========================================
 local function networkWorker()
     while true do
@@ -210,7 +210,7 @@ local function networkWorker()
                 hasActiveErrors = false
                 local tempRequests = {}
                 
-                -- Optimization: Cache item registry as an array of string items to prevent nested filter table mismatches
+                -- Cache system items and map using modern 1.21.1 '.count' key fields
                 local systemItems = {}
                 local listSuccess, allItems = pcall(ae2.listItems)
                 if listSuccess and allItems then
@@ -247,17 +247,18 @@ local function networkWorker()
                         
                         local linePrefix = string.format("%-22s | %-5d | ", displayName, needed)
                         
-                        -- Match against cached list strings instead of running slow and buggy .getItem() tables
+                        -- CRITICAL FIX: Extract amount using the modern '.count' payload signature
                         local aeItem = systemItems[itemID]
-                        local available = aeItem and (tonumber(aeItem.amount) or tonumber(aeItem.count)) or 0
+                        local available = 0
                         local craftable = false
                         
                         if aeItem then
+                            available = tonumber(aeItem.count) or tonumber(aeItem.amount) or 0
                             craftable = aeItem.isCraftable or false
                         else
-                            -- Alternate check: If item has 0 in stock, see if it has a pattern
                             local checkSuccess, checkItem = pcall(function() return ae2.getItem({name = itemID}) end)
                             if checkSuccess and checkItem then
+                                available = tonumber(checkItem.count) or tonumber(checkItem.amount) or 0
                                 craftable = checkItem.isCraftable or false
                             end
                         end
@@ -284,7 +285,6 @@ local function networkWorker()
                                 table.insert(tempRequests, {text = linePrefix .. "⚒ QUEUED", color = C_SUB})
                                 pcall(function() ae2.craftItem({name = itemID, count = needed}) end)
                             else
-                                -- Final blind export fallback run
                                 local bruteForceExported = 0
                                 pcall(function()
                                     bruteForceExported = ae2.exportItem({name = itemID, count = needed}, EXPORT_DIRECTION) or 0
