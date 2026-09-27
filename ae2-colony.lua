@@ -31,14 +31,15 @@ local function addDelivery(name, qty)
     local timestamp = os.date("%H:%M")
     table.insert(deliveryHistory, 1, string.format("[%s] -> %dx %s", timestamp, qty, name))
     if #deliveryHistory > 5 then table.remove(deliveryHistory) end
+end
+
 -- Safely wrap monitor
 local monitor = peripheral.wrap(MONITOR_SIDE)
 if not monitor then error("[FATAL] Monitor not found on side: " .. MONITOR_SIDE) end
 
 monitor.setTextScale(1)
 local w, h = monitor.getSize()
-
--- Dynamic peripheral resolution core
+-- Find peripheral components dynamically
 local colony = peripheral.find("colony")
 local meBridge = peripheral.find("meBridge")
 
@@ -59,21 +60,20 @@ end
 
 -- Process active MineColonies requests safely handling item structures
 local function processColonyRequests()
-    colonyConnected = (colony ~= nil)
-    ae2Connected = (meBridge ~= nil)
-    
-    if not colonyConnected or not ae2Connected then 
-        hasActiveErrors = true
+    if not colony or not meBridge then 
+        colonyConnected = (colony ~= nil)
+        ae2Connected = (meBridge ~= nil)
         return 
     end
+    colonyConnected = true
+    ae2Connected = true
     
-    hasActiveErrors = false
     local requests = colony.getRequests()
     currentRequests = {}
     
     for _, req in ipairs(requests) do
         for _, item in ipairs(req.items) do
-            -- FIXED: Avoid array unpack truncation by indexing values directly
+            -- FIXED: Avoid array unpack truncation by indexing items explicitly
             local itemName = item.name or "Unknown Item"
             local needed = item.count or item.needed or 1 
             
@@ -116,93 +116,67 @@ local function processColonyRequests()
         end
     end
 end
--- Helper function for clean background fills on text boundaries
-local function drawRowBackground(y, color)
-    monitor.setBackgroundColor(color)
-    monitor.setCursorPos(1, y)
-    monitor.write(string.rep(" ", w))
-end
-
--- Re-engineered 5x3 Structural Screen Mapping Grid
+-- Layout display loop matching initial script style rules
 local function drawDashboard()
     monitor.setBackgroundColor(colors.black)
     monitor.clear()
     
-    -- Neon Header Bar Construction
-    monitor.setBackgroundColor(colors.gray)
-    monitor.setCursorPos(1, 1)
-    monitor.write(string.rep(" ", w))
-    monitor.setCursorPos(2, 1)
+    -- Status Header Bar
+    monitor.setCursorPos(2, 2)
     monitor.setTextColor(colors.cyan)
-    monitor.write("NEON TECH // ATM10 COLONY BRIDGE")
-    
-    -- Status Grid Placement Matrix (Prevents overlap on 5x3)
-    monitor.setBackgroundColor(colors.black)
-    
-    monitor.setCursorPos(2, 3)
-    monitor.setTextColor(colors.white)
-    monitor.write("Colony Integration: ")
-    monitor.setTextColor(colonyConnected and colors.green or colors.red)
-    monitor.write(colonyConnected and "[ONLINE]" or "[OFFLINE]")
+    monitor.write("== MINICOLONIES TO AE2 BRIDGE DASHBOARD ==")
     
     monitor.setCursorPos(2, 4)
     monitor.setTextColor(colors.white)
-    monitor.write("AE2 Quantum Bridge: ")
-    monitor.setTextColor(ae2Connected and colors.green or colors.red)
-    monitor.write(ae2Connected and "[STABLE]" or "[DISCONNECTED]")
+    monitor.write("Colony Connection: ")
+    monitor.setTextColor(colonyConnected and colors.green or colors.red)
+    monitor.write(colonyConnected and "ONLINE" or "OFFLINE")
     
-    -- Section Dividers
+    monitor.setCursorPos(25, 4)
+    monitor.setTextColor(colors.white)
+    monitor.write("AE2 System: ")
+    monitor.setTextColor(ae2Connected and colors.green or colors.red)
+    monitor.write(ae2Connected and "CONNECTED" or "DISCONNECTED")
+    
+    -- Request Tracking Column Layout
     monitor.setCursorPos(2, 6)
     monitor.setTextColor(colors.cyan)
-    monitor.write("--- CURRENT COLONY SUPPLY LOOPS ---")
+    monitor.write("Active Requests:")
     
-    local row = 8
+    local row = 7
     if #currentRequests == 0 then
-        monitor.setCursorPos(4, row)
-        monitor.setTextColor(colors.lightGray)
-        monitor.write(">> No pending structural matrix items requested.")
+        monitor.setCursorPos(2, row)
+        monitor.setTextColor(colors.gray)
+        monitor.write("No active pending requests detected.")
     else
         for i, req in ipairs(currentRequests) do
-            if row > h - 6 then break end
-            
-            -- Print quantity and truncated item name
+            if row > h - 3 then break end
             monitor.setCursorPos(2, row)
             monitor.setTextColor(colors.white)
-            local cleanLabel = string.format("%dx %s", req.needed, req.name)
-            monitor.write(cleanLabel:sub(1, w - 16))
+            monitor.write(string.format("%dx %s", req.needed, req.name:sub(1, 15)))
             
-            -- Rigorous right-align status matrix column tracking
-            monitor.setCursorPos(w - 12, row)
+            monitor.setCursorPos(26, row)
             if req.status == "Exporting" then monitor.setTextColor(colors.green)
             elseif req.status == "Crafting" then monitor.setTextColor(colors.yellow)
             else monitor.setTextColor(colors.red) end
-            monitor.write(string.format("[%s]", req.status))
-            
+            monitor.write("[" .. req.status .. "]")
             row = row + 1
         end
     end
     
-    -- Fixed-position dynamic diagnostics telemetry block at footer
-    local logY = h - 3
-    monitor.setCursorPos(2, logY)
-    monitor.setTextColor(colors.cyan)
-    monitor.write("SYSTEM ROUTING LOGS:")
-    
-    monitor.setCursorPos(2, logY + 1)
-    monitor.setTextColor(colors.lightGray)
+    -- FIXED: Safely index the string value from the log array to prevent freezing
+    monitor.setCursorPos(2, h)
+    monitor.setTextColor(colors.gray)
     if debugLogs[1] then
         monitor.write(debugLogs[1]:sub(1, w - 2))
     else
-        monitor.write("Awaiting bridge matrix polling pulse...")
+        monitor.write(":: Awaiting network telemetry...")
     end
 end
 
 -- Executive Automation Loop
 local function main()
     while true do
-        colony = peripheral.find("colony")
-        meBridge = peripheral.find("meBridge")
-        
         isPolling = true
         processColonyRequests()
         drawDashboard()
