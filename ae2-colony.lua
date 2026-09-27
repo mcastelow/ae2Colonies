@@ -1,11 +1,11 @@
 -- ATM10 MineColonies to AE2 Bridge Dashboard (Neon Tech Variant)
 -- Optimized for 5x3 Monitor with a Futuristic Dark Base Aesthetic
--- 1.21.1 STABLE CORE: Overhauled query maps targeting modern item structures
+-- 1.21.1 FIXED CORES: Engineered to strictly extract exact nested counts
 
 -- ====== CONFIGURATION ======
 local MONITOR_SIDE = "top"         
 local EXPORT_DIRECTION = "down"   -- Targets the Netherite Barrel beneath the ME Bridge
-local REFRESH_RATE = 5             -- Kept at 5s safe polling rate before testing speed changes
+local REFRESH_RATE = 5             
 -- ===========================
 
 -- Shared thread communication states
@@ -108,6 +108,7 @@ local function drawHeader()
 end
 
 local function drawDebugPanel()
+    -- HIDES ENTIRELY WHEN EVERYTHING IS HEALTHY: Only displays if active exceptions trigger true
     if hasActiveErrors then
         local startY = h - 4
         monitor.setCursorPos(1, startY)
@@ -204,6 +205,10 @@ local function networkWorker()
                 
                 for _, req in ipairs(requests) do
                     sleep(0.02)
+                    
+                    -- Explicitly extract top-level tracking parameters before hitting the child arrays
+                    local baseNeeded = tonumber(req.count) or tonumber(req.needed) or tonumber(req.amount) or 0
+                    
                     local extractedItems = {}
                     if req.items and type(req.items) == "table" then
                         local elementsFound = false
@@ -241,13 +246,20 @@ local function networkWorker()
                                 itemID = subNode
                                 displayName = activeItem.name or itemID
                             end
+                            
                             needed = tonumber(activeItem.count) or tonumber(activeItem.needed) or tonumber(activeItem.amount) or 0
                         elseif type(activeItem) == "string" then
                             itemID = activeItem
                             displayName = itemID
                         end
-                        if needed == 0 then
-                            needed = tonumber(req.count) or tonumber(req.needed) or tonumber(req.amount) or 0
+                        
+                        -- CRITICAL UPDATE: Handle nested array field evaluation fallbacks explicitly
+                        if needed == 0 or needed == 1 then
+                            if baseNeeded > 0 then
+                                needed = baseNeeded
+                            else
+                                needed = tonumber(req.count) or tonumber(req.needed) or tonumber(req.amount) or 1
+                            end
                         end
                         
                         if itemID ~= "void:null" and needed > 0 then
@@ -255,6 +267,7 @@ local function networkWorker()
                             displayName = displayName:gsub("minecraft:", ""):gsub("domum_ornamentum:", "")
                             displayName = displayName:gsub("^%l", string.upper):gsub("_", " ")
                             if #displayName > 22 then displayName = displayName:sub(1, 19) .. "..." end
+                            
                             local linePrefix = string.format("%-22s | %-5d | ", displayName, needed)
                             local available = 0
                             local craftable = false
@@ -269,37 +282,33 @@ local function networkWorker()
                             
                             if available >= needed then
                                 table.insert(tempRequests, {text = linePrefix .. "▶ ROUTING", color = C_SUCCESS})
+                                
+                                -- EXPLICIT 1.21 EXPORT STRUCTURE BLOCK: Passes absolute values directly to the wrapper
                                 local ok, amt = pcall(function() return ae2.exportItem({name = itemID, count = needed}, EXPORT_DIRECTION) end)
                                 if not ok or not amt or amt == 0 or amt == true then
-                                    ok, amt = pcall(function() return ae2.exportItem(itemID, needed, EXPORT_DIRECTION) end)
+                                    ok, amt = pcall(function() return ae2.exportItem({item = itemID, count = needed}, EXPORT_DIRECTION) end)
                                 end
-                                if ok and amt and amt ~= true and tonumber(amt) and tonumber(amt) > 0 then
-                                    addDelivery(displayName, tonumber(amt))
-                                elseif ok then addDelivery(displayName, needed) end
+                                
+                                if ok then addDelivery(displayName, needed) end
                             elseif available > 0 and available < needed then
                                 table.insert(tempRequests, {text = linePrefix .. "⚠ DEPLETED", color = C_WARN})
+                                
                                 local ok, amt = pcall(function() return ae2.exportItem({name = itemID, count = available}, EXPORT_DIRECTION) end)
                                 if not ok or not amt or amt == 0 or amt == true then
-                                    ok, amt = pcall(function() return ae2.exportItem(itemID, available, EXPORT_DIRECTION) end)
+                                    ok, amt = pcall(function() return ae2.exportItem({item = itemID, count = available}, EXPORT_DIRECTION) end)
                                 end
-                                if ok and amt and amt ~= true and tonumber(amt) and tonumber(amt) > 0 then
-                                    addDelivery(displayName, tonumber(amt))
-                                elseif ok then addDelivery(displayName, available) end
                                 
-                                if craftable then 
-                                    local craftShortage = needed - available
-                                    pcall(function() 
-                                        local done = ae2.craftItem({item = itemID, count = craftShortage})
-                                        if not done then ae2.craftItem({name = itemID, count = craftShortage}) end
-                                    end) 
+                                if ok then 
+                                    addDelivery(displayName, available)
+                                    if craftable then 
+                                        local craftShortage = needed - available
+                                        pcall(function() ae2.craftItem({name = itemID, count = craftShortage}) end) 
+                                    end
                                 end
                             else
                                 if craftable then
                                     table.insert(tempRequests, {text = linePrefix .. "⚒ QUEUED", color = C_SUB})
-                                    pcall(function() 
-                                        local done = ae2.craftItem({item = itemID, count = needed})
-                                        if not done then ae2.craftItem({name = itemID, count = needed}) end
-                                    end)
+                                    pcall(function() ae2.craftItem({name = itemID, count = needed}) end)
                                 else
                                     table.insert(tempRequests, {text = linePrefix .. "✖ VOID", color = C_FAIL})
                                 end
