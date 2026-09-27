@@ -40,7 +40,7 @@ wget https://raw.githubusercontent.com/mcastelow/ae2Colonies/refs/heads/main/ae2
 
 3. To set the system to initialize automatically whenever the chunk loads or the computer restarts, create a boot configuration file:
 
-echo kernel.lua > startup.lua
+kernel.lua > startup.lua
 
 4. Fire up the dashboard array by running:
 
