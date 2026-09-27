@@ -1,6 +1,6 @@
 -- ATM10 MineColonies to AE2 Bridge Dashboard (Neon Tech Variant)
 -- Optimized for 5x3 Monitor with a Futuristic Dark Base Aesthetic
--- FUZZY CORE: Hardened atomic memory pipelines to prevent background crashes
+-- FULLY DECOUPLED MATRIX: Bypasses Java deadlocks by eliminating simultaneous peripheral queries
 
 -- ====== CONFIGURATION ======
 local MONITOR_SIDE = "top"         
@@ -11,6 +11,8 @@ local REFRESH_RATE = 5
 -- Shared thread communication states
 local hasActiveErrors = false
 local isPolling = false
+local colonyConnected = false
+local ae2Connected = false
 local currentRequests = {}
 
 -- Diagnostics log array
@@ -50,7 +52,7 @@ local C_WARN    = colors.orange      -- Quantum Amber (Partial/Pending)
 local C_FAIL    = colors.red         -- Critical Red (Missing/Offline)
 -- ==========================================
 
-local function drawHeader(colonyPresent, ae2Present)
+local function drawHeader()
     monitor.setBackgroundColor(C_BG)
     monitor.clear()
     
@@ -64,7 +66,6 @@ local function drawHeader(colonyPresent, ae2Present)
     monitor.setCursorPos(padding + 1, 1)
     monitor.write(title)
     
-    -- FIXED RENDERING ELEMENT: Swapped un-renderable Unicode emoji to secure safe ASCII text blocks
     if isPolling then
         monitor.setTextColor(colors.magenta)
         monitor.setCursorPos(w - 5, 1)
@@ -75,7 +76,7 @@ local function drawHeader(colonyPresent, ae2Present)
     monitor.setCursorPos(2, 3)
     monitor.setTextColor(C_TEXT)
     monitor.write("» COLONY INTEGRATOR (LEFT): ")
-    if colonyPresent then
+    if colonyConnected then
         monitor.setTextColor(C_SUCCESS)
         monitor.write("[SECURE]")
     else
@@ -86,7 +87,7 @@ local function drawHeader(colonyPresent, ae2Present)
     monitor.setCursorPos(2, 4)
     monitor.setTextColor(C_TEXT)
     monitor.write("» ME NETWORK BRIDGE (RIGHT): ")
-    if ae2Present then
+    if ae2Connected then
         monitor.setTextColor(C_SUCCESS)
         monitor.write("[ONLINE]")
     else
@@ -108,7 +109,7 @@ local function drawHeader(colonyPresent, ae2Present)
 end
 
 local function drawDebugPanel()
-    -- ARCHITECTURAL PREREQUISITE POLICY: Error panel collapses entirely when hasActiveErrors flags false
+    -- HIDES ENTIRELY WHEN WORKING PROPERLY: Only active during an error flag state
     if hasActiveErrors then
         local startY = h - 4
         monitor.setCursorPos(1, startY)
@@ -150,10 +151,8 @@ end
 -- ==========================================
 local function renderLoop()
     while true do
-        local colonyPresent = peripheral.find("colony_integrator") ~= nil
-        local ae2Present = peripheral.find("me_bridge") ~= nil
-        
-        drawHeader(colonyPresent, ae2Present)
+        -- CRITICAL DECOUPLING: Removed all peripheral.find calls here to stop hardware race conditions
+        drawHeader()
         
         local y = 9
         local hasPanel = hasActiveErrors or (#deliveryHistory > 0)
@@ -196,6 +195,9 @@ local function networkWorker()
         local colony = peripheral.find("colony_integrator")
         local ae2 = peripheral.find("me_bridge")
         
+        colonyConnected = (colony ~= nil)
+        ae2Connected = (ae2 ~= nil)
+        
         if not colony or not ae2 then
             hasActiveErrors = true
             currentRequests = {}
@@ -218,11 +220,9 @@ local function networkWorker()
                 for _, req in ipairs(requests) do
                     sleep(0.02)
                     
-                    -- CRITICAL STABLE UPGRADE: Iterate across lists packed inside the items index layer
                     local extractedItems = {}
                     if req.items and type(req.items) == "table" then
-                        -- Check if req.items contains sequential index values
-                        if req.items[1] then
+                        if #req.items > 0 then
                             for _, subItem in ipairs(req.items) do
                                 table.insert(extractedItems, subItem)
                             end
@@ -230,7 +230,7 @@ local function networkWorker()
                             table.insert(extractedItems, req.items)
                         end
                     elseif type(req.item) == "table" then
-                        if req.item[1] then
+                        if #req.item > 0 then
                             for _, subItem in ipairs(req.item) do
                                 table.insert(extractedItems, subItem)
                             end
@@ -241,14 +241,12 @@ local function networkWorker()
                         table.insert(extractedItems, req)
                     end
                     
-                    -- Process every single item un-nested out of the array collections
                     for _, activeItem in ipairs(extractedItems) do
                         local itemID = "void:null"
                         local displayName = "Unknown Block"
                         local needed = 0
                         
                         if type(activeItem) == "table" then
-                            -- Extract identities out of nested fields recursively
                             local subNode = activeItem.item or activeItem
                             if type(subNode) == "table" then
                                 itemID = subNode.name or subNode.id or "void:null"
@@ -264,7 +262,6 @@ local function networkWorker()
                             displayName = itemID
                         end
                         
-                        -- Top-level count key backups block lookup parameters
                         if needed == 0 then
                             needed = tonumber(req.count) or tonumber(req.needed) or tonumber(req.amount) or 0
                         end
@@ -327,7 +324,6 @@ local function networkWorker()
                     end
                 end
                 
-                -- ATOMIC ARRAY INTERCHANGE UPDATE
                 currentRequests = tempRequests
                 sleep(REFRESH_RATE)
             end
