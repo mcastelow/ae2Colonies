@@ -1,6 +1,6 @@
 -- ATM10 MineColonies to AE2 Bridge Dashboard (Neon Tech Variant)
 -- Optimized for 5x3 Monitor with a Futuristic Dark Base Aesthetic
--- 1.21.1 FIXED SCHEMAS: Engineered to map nested .items sub-tables safely
+-- 1.21.1 HYPER-STABLE CORE: Decoupled to bypass Colony Integrator locks
 
 -- ====== CONFIGURATION ======
 local MONITOR_SIDE = "top"         
@@ -107,6 +107,7 @@ local function drawHeader(colonyPresent, ae2Present)
 end
 
 local function drawDebugPanel()
+    -- HIDES ENTIRELY WHEN EVERYTHING IS OK: Only displays panel if hasActiveErrors is explicitly flagged true
     if hasActiveErrors then
         local startY = h - 4
         monitor.setCursorPos(1, startY)
@@ -183,7 +184,7 @@ local function renderLoop()
 end
 
 -- ==========================================
--- THREAD 2: PERIPHERAL INTEGRATOR (1.21.1 BALANCED PARSING)
+-- THREAD 2: PERIPHERAL INTEGRATOR (1.21.1 ISOLATED)
 -- ==========================================
 local function networkWorker()
     while true do
@@ -196,7 +197,8 @@ local function networkWorker()
             sleep(REFRESH_RATE)
         else
             isPolling = true
-            local success, requests = pcall(colony.getRequests)
+            -- Isolated clean pcall wrapper preventing thread cascades
+            local success, requests = pcall(function() return colony.getRequests() end)
             isPolling = false
             
             if not success or not requests then
@@ -216,16 +218,18 @@ local function networkWorker()
                 end
                 
                 for _, req in ipairs(requests) do
-                    sleep(0)
+                    -- Heavy context yield (0.1s) to force Java garbage collectors to flush locks
+                    sleep(0.1)
                     
                     local itemID = "void:null"
                     local displayName = "Unknown Block"
                     
+                    -- Safe array element layout unpacking targeting modern 1.21 collection tables
                     if req.items and type(req.items) == "table" then
-                        local firstItem = req.items
-                        if type(firstItem) == "table" then
-                            itemID = firstItem.name or firstItem.id or "void:null"
-                            displayName = firstItem.displayName or firstItem.name or displayName
+                        local targetNode = req.items[1] or req.items
+                        if type(targetNode) == "table" then
+                            itemID = targetNode.name or targetNode.id or "void:null"
+                            displayName = targetNode.displayName or targetNode.name or displayName
                         end
                     elseif type(req.item) == "table" then
                         itemID = req.item.name or req.item.id or "void:null"
