@@ -54,7 +54,6 @@ local function drawHeader(colonyPresent, ae2Present)
     monitor.setBackgroundColor(C_BG)
     monitor.clear()
     
-    -- Main Cyber Title Bar
     monitor.setBackgroundColor(C_PANEL)
     monitor.setTextColor(C_HEADER)
     monitor.setCursorPos(1, 1)
@@ -65,14 +64,12 @@ local function drawHeader(colonyPresent, ae2Present)
     monitor.setCursorPos(padding + 1, 1)
     monitor.write(title)
     
-    -- Glowing network query indicator (pulled from async state)
     if isPolling then
         monitor.setTextColor(colors.magenta)
         monitor.setCursorPos(w - 3, 1)
         monitor.write("[⚡]")
     end
     
-    -- Connection Matrices
     monitor.setBackgroundColor(C_BG)
     monitor.setCursorPos(2, 3)
     monitor.setTextColor(C_TEXT)
@@ -96,7 +93,6 @@ local function drawHeader(colonyPresent, ae2Present)
         monitor.write("[LINK DOWN]")
     end
     
-    -- Tech Grid Dividers (Swapped to safe ASCII equivalents)
     monitor.setCursorPos(1, 6)
     monitor.setTextColor(C_SUB)
     monitor.write(string.rep("=", w))
@@ -153,14 +149,11 @@ end
 -- ==========================================
 local function renderLoop()
     while true do
-        -- Check peripherals on the render side safely without blocking execution
         local colonyPresent = peripheral.find("colony_integrator") ~= nil
         local ae2Present = peripheral.find("me_bridge") ~= nil
         
-        -- Draw main chassis
         drawHeader(colonyPresent, ae2Present)
         
-        -- Render Active Requests Cached by Thread 2
         local y = 9
         local hasPanel = hasActiveErrors or (#deliveryHistory > 0)
         local maxDisplayY = hasPanel and (h - 7) or (h - 1)
@@ -186,14 +179,12 @@ local function renderLoop()
         end
         
         drawDebugPanel()
-        
-        -- Pulse animation tick rate (Runs entirely immune to mod freezes!)
         sleep(0.5)
     end
 end
 
 -- ==========================================
--- THREAD 2: THE PERIPHERAL INTEGRATOR
+-- THREAD 2: THE PERIPHERAL INTEGRATOR (FIXED METRIC SCHEMA)
 -- ==========================================
 local function networkWorker()
     while true do
@@ -221,54 +212,63 @@ local function networkWorker()
                 local tempRequests = {}
                 
                 for _, req in ipairs(requests) do
-                    -- Instantly yields back to game tick to let deadlocks unload
                     sleep(0)
                     
-                    local itemID = req.item or "void:null"
-                    local needed = tonumber(req.needed) or 0
-                    local displayName = req.name or itemID
-                    
-                    displayName = displayName:gsub("minecraft:", ""):gsub("domum_ornamentum:", "")
-                    displayName = displayName:gsub("^%l", string.upper):gsub("_", " ")
-                    if #displayName > 22 then displayName = displayName:sub(1, 19) .. "..." end
-                    
-                    local linePrefix = string.format("%-22s | %-5d | ", displayName, needed)
-                    
-                    local available = 0
-                    local aeSuccess, aeItem = pcall(function()
-                        return ae2.getItem({name = itemID})
-                    end)
-                    
-                    if aeSuccess and aeItem then
-                        available = tonumber(aeItem.amount) or tonumber(aeItem.count) or 0
+                    -- Extract fields properly by verifying table structures or alternative naming
+                    local itemID = "void:null"
+                    if type(req.item) == "table" and req.item.name then
+                        itemID = req.item.name
+                    elseif type(req.item) == "string" then
+                        itemID = req.item
+                    else
+                        itemID = req.id or req.resource or "void:null"
                     end
                     
-                    if available >= needed then
-                        table.insert(tempRequests, {text = linePrefix .. "▶ ROUTING", color = C_TEXT})
+                    local needed = tonumber(req.needed) or tonumber(req.amount) or tonumber(req.count) or 0
+                    local displayName = req.name or req.displayName or itemID
+                    
+                    -- Only display and process valid rows where a physical item is actively requested
+                    if itemID ~= "void:null" and needed > 0 then
+                        displayName = displayName:gsub("minecraft:", ""):gsub("domum_ornamentum:", "")
+                        displayName = displayName:gsub("^%l", string.upper):gsub("_", " ")
+                        if #displayName > 22 then displayName = displayName:sub(1, 19) .. "..." end
                         
-                        local ok = pcall(function()
-                            ae2.exportItem({name = itemID, count = needed}, EXPORT_DIRECTION)
+                        local linePrefix = string.format("%-22s | %-5d | ", displayName, needed)
+                        local available = 0
+                        
+                        local aeSuccess, aeItem = pcall(function()
+                            return ae2.getItem({name = itemID})
                         end)
-                        if ok then addDelivery(displayName, needed) end
                         
-                    elseif available > 0 and available < needed then
-                        table.insert(tempRequests, {text = linePrefix .. "⚠ DEPLETED (" .. available .. ")", color = C_TEXT})
+                        if aeSuccess and aeItem then
+                            available = tonumber(aeItem.amount) or tonumber(aeItem.count) or 0
+                        end
                         
-                        local ok = pcall(function()
-                            ae2.exportItem({name = itemID, count = available}, EXPORT_DIRECTION)
-                        end)
-                        if ok then addDelivery(displayName, available) end
-                    else
-                        table.insert(tempRequests, {text = linePrefix .. "✖ VOID", color = C_FAIL})
+                        if available >= needed then
+                            table.insert(tempRequests, {text = linePrefix .. "▶ ROUTING", color = C_TEXT})
+                            local ok = pcall(function()
+                                ae2.exportItem({name = itemID, count = needed}, EXPORT_DIRECTION)
+                            end)
+                            if ok then addDelivery(displayName, needed) end
+                        elseif available > 0 and available < needed then
+                            table.insert(tempRequests, {text = linePrefix .. "⚠ DEPLETED (" .. available .. ")", color = C_TEXT})
+                            local ok = pcall(function()
+                                ae2.exportItem({name = itemID, count = available}, EXPORT_DIRECTION)
+                            end)
+                            if ok then addDelivery(displayName, available) end
+                        else
+                            table.insert(tempRequests, {text = linePrefix .. "✖ VOID", color = C_FAIL})
+                        end
+                    end
+                end
+                
+                currentRequests = tempRequests
+                sleep(REFRESH_RATE)
+            end
+        end
+    end
 end
-end
--- Update layout cache thread-safely
-currentRequests = tempRequests
-sleep(REFRESH_RATE)
-end
-end
-end
-end
+
 -- ====== CONCURRENCY EXECUTIVE KERNEL ======
 addLog("Logistics kernel initialized.")
 term.clear()
@@ -276,5 +276,5 @@ print("========================================")
 print("  AE2 LOGISTICS ASYNC MATRIX INITIALIZED")
 print("========================================")
 print("Monitoring thread activity status...")
--- Launch both loops instantly in parallel. If one blocks, the other ticks.
+
 parallel.waitForAny(renderLoop, networkWorker)
