@@ -1,6 +1,6 @@
 -- ATM10 MineColonies to AE2 Bridge Dashboard (Neon Tech Variant)
 -- Optimized for 5x3 Monitor with a Futuristic Dark Base Aesthetic
--- Engineered with Async Parallel Pipelines to Prevent Java Deadlocks
+-- Engineered with Async Parallel Pipelines & AE2 Auto-Crafting Engines
 
 -- ====== CONFIGURATION ======
 local MONITOR_SIDE = "top"         
@@ -184,7 +184,7 @@ local function renderLoop()
 end
 
 -- ==========================================
--- THREAD 2: THE PERIPHERAL INTEGRATOR (FIXED EXPORT PIPELINE)
+-- THREAD 2: THE PERIPHERAL INTEGRATOR WITH AUTO-CRAFTING ENGINE
 -- ==========================================
 local function networkWorker()
     while true do
@@ -214,7 +214,6 @@ local function networkWorker()
                 for _, req in ipairs(requests) do
                     sleep(0)
                     
-                    -- Deep parsing lookup to match item identifier string patterns safely
                     local itemID = "void:null"
                     if type(req.item) == "table" then
                         itemID = req.item.name or req.item.id or "void:null"
@@ -224,14 +223,12 @@ local function networkWorker()
                         itemID = req.id or req.resource or "void:null"
                     end
                     
-                    -- Sanity gate formatting wrapper
                     if type(itemID) == "table" then itemID = "void:null" end
                     
                     local needed = tonumber(req.needed) or tonumber(req.amount) or tonumber(req.count) or 0
                     local displayName = req.name or req.displayName or itemID
                     
                     if itemID ~= "void:null" and needed > 0 then
-                        -- Enforce true standard colon mapping namespaces for AE2 systems
                         if not string.find(itemID, ":") then
                             itemID = "minecraft:" .. itemID
                         end
@@ -242,19 +239,19 @@ local function networkWorker()
                         
                         local linePrefix = string.format("%-22s | %-5d | ", displayName, needed)
                         local available = 0
+                        local craftable = false
                         
-                        -- CRITICAL UPDATE: Query AE2 using standardized table dictionary key format
                         local aeSuccess, aeItem = pcall(function()
                             return ae2.getItem({name = itemID})
                         end)
                         
                         if aeSuccess and aeItem then
                             available = tonumber(aeItem.amount) or tonumber(aeItem.count) or 0
+                            craftable = aeItem.isCraftable or false
                         end
                         
                         if available >= needed then
                             table.insert(tempRequests, {text = linePrefix .. "▶ ROUTING", color = C_SUCCESS})
-                            
                             local ok = pcall(function()
                                 return ae2.exportItem({name = itemID, count = needed}, EXPORT_DIRECTION)
                             end)
@@ -262,23 +259,32 @@ local function networkWorker()
                             
                         elseif available > 0 and available < needed then
                             table.insert(tempRequests, {text = linePrefix .. "⚠ DEPLETED (" .. available .. ")", color = C_WARN})
-                            
                             local ok = pcall(function()
                                 return ae2.exportItem({name = itemID, count = available}, EXPORT_DIRECTION)
                             end)
                             if ok then addDelivery(displayName, available) end
-                        else
-                            -- If the fallback dictionary completely failed, make a brute-force raw export attempt anyway!
-                            local bruteForceExported = 0
-                            pcall(function()
-                                bruteForceExported = ae2.exportItem({name = itemID, count = needed}, EXPORT_DIRECTION) or 0
-                            end)
                             
-                            if type(bruteForceExported) == "number" and bruteForceExported > 0 then
-                                table.insert(tempRequests, {text = linePrefix .. "▶ ROUTING", color = C_SUCCESS})
-                                addDelivery(displayName, bruteForceExported)
+                            -- Trigger sub-assembly job if a recipe pattern is saved
+                            if craftable then
+                                pcall(function() ae2.craftItem({name = itemID, count = (needed - available)}) end)
+                            end
+                        else
+                            -- Handshake processing for 0 items available
+                            if craftable then
+                                table.insert(tempRequests, {text = linePrefix .. "⚒ QUEUED", color = C_SUB})
+                                pcall(function() ae2.craftItem({name = itemID, count = needed}) end)
                             else
-                                table.insert(tempRequests, {text = linePrefix .. "✖ VOID", color = C_FAIL})
+                                local bruteForceExported = 0
+                                pcall(function()
+                                    bruteForceExported = ae2.exportItem({name = itemID, count = needed}, EXPORT_DIRECTION) or 0
+                                end)
+                                
+                                if type(bruteForceExported) == "number" and bruteForceExported > 0 then
+                                    table.insert(tempRequests, {text = linePrefix .. "▶ ROUTING", color = C_SUCCESS})
+                                    addDelivery(displayName, bruteForceExported)
+                                else
+                                    table.insert(tempRequests, {text = linePrefix .. "✖ VOID", color = C_FAIL})
+                                end
                             end
                         end
                     end
