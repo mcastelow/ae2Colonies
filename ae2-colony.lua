@@ -1,6 +1,6 @@
 -- ATM10 MineColonies to AE2 Bridge Dashboard (Neon Tech Variant)
 -- Optimized for 5x3 Monitor with a Futuristic Dark Base Aesthetic
--- 1.21.1 HYPER-STABLE CORE: Decoupled to bypass Colony Integrator locks
+-- 1.21.1 STABLE CORE: Overhauled query maps targeting modern item structures
 
 -- ====== CONFIGURATION ======
 local MONITOR_SIDE = "top"         
@@ -107,7 +107,7 @@ local function drawHeader(colonyPresent, ae2Present)
 end
 
 local function drawDebugPanel()
-    -- HIDES ENTIRELY WHEN EVERYTHING IS OK: Only displays panel if hasActiveErrors is explicitly flagged true
+    -- COMPLIANCE: Screen error diagnostics hide entirely when working cleanly
     if hasActiveErrors then
         local startY = h - 4
         monitor.setCursorPos(1, startY)
@@ -184,7 +184,7 @@ local function renderLoop()
 end
 
 -- ==========================================
--- THREAD 2: PERIPHERAL INTEGRATOR (1.21.1 ISOLATED)
+-- THREAD 2: PERIPHERAL INTEGRATOR (COMPATIBILITY RESOLVED)
 -- ==========================================
 local function networkWorker()
     while true do
@@ -197,7 +197,6 @@ local function networkWorker()
             sleep(REFRESH_RATE)
         else
             isPolling = true
-            -- Isolated clean pcall wrapper preventing thread cascades
             local success, requests = pcall(function() return colony.getRequests() end)
             isPolling = false
             
@@ -218,15 +217,13 @@ local function networkWorker()
                 end
                 
                 for _, req in ipairs(requests) do
-                    -- Heavy context yield (0.1s) to force Java garbage collectors to flush locks
                     sleep(0.1)
                     
                     local itemID = "void:null"
                     local displayName = "Unknown Block"
                     
-                    -- Safe array element layout unpacking targeting modern 1.21 collection tables
                     if req.items and type(req.items) == "table" then
-                        local targetNode = req.items[1] or req.items
+                        local targetNode = req.items
                         if type(targetNode) == "table" then
                             itemID = targetNode.name or targetNode.id or "void:null"
                             displayName = targetNode.displayName or targetNode.name or displayName
@@ -275,34 +272,32 @@ local function networkWorker()
                         if available >= needed then
                             table.insert(tempRequests, {text = linePrefix .. "▶ ROUTING", color = C_SUCCESS})
                             
-                            local ok = pcall(function() 
+                            pcall(function() 
                                 return ae2.exportItem({item = itemID, count = needed}, EXPORT_DIRECTION)
                                     or ae2.exportItem({name = itemID, count = needed}, EXPORT_DIRECTION)
                             end)
-                            if ok then addDelivery(displayName, needed) end
                             
                         elseif available > 0 and available < needed then
                             table.insert(tempRequests, {text = linePrefix .. "⚠ DEPLETED", color = C_WARN})
                             
-                            local ok = pcall(function() 
+                            pcall(function() 
                                 return ae2.exportItem({item = itemID, count = available}, EXPORT_DIRECTION)
                                     or ae2.exportItem({name = itemID, count = available}, EXPORT_DIRECTION)
                             end)
-                            if ok then addDelivery(displayName, available) end
                             
                             if craftable then 
                                 local craftShortage = needed - available
                                 pcall(function() 
-                                    local done = ae2.craftItem({item = itemID, count = craftShortage})
-                                    if not done then ae2.craftItem({name = itemID, count = craftShortage}) end
+                                    return ae2.craftItem({name = itemID, count = craftShortage})
+                                        or ae2.craftItem({item = itemID, count = craftShortage})
                                 end) 
                             end
                         else
                             if craftable then
                                 table.insert(tempRequests, {text = linePrefix .. "⚒ QUEUED", color = C_SUB})
                                 pcall(function() 
-                                    local done = ae2.craftItem({item = itemID, count = needed})
-                                    if not done then ae2.craftItem({name = itemID, count = needed}) end
+                                    return ae2.craftItem({name = itemID, count = needed})
+                                        or ae2.craftItem({item = itemID, count = needed})
                                 end)
                             else
                                 table.insert(tempRequests, {text = linePrefix .. "✖ VOID", color = C_FAIL})
