@@ -16,7 +16,7 @@ For the script to scan, route, and map peripheral addresses correctly, your bloc
          [TOP]
            │
 [Colony Integrator] ➔ [Advanced Computer] ➔ [ME Bridge] ➔ [Ender Chest]
-      [LEFT]             [MIDDLE]          [RIGHT]       [FRONT of Bridge]
+      [LEFT]             [MIDDLE]          [RIGHT]       [BELOW Bridge]
                                               │
                                             [BACK]
                                               └── [Wireless ME Terminal]
