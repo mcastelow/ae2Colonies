@@ -1,11 +1,11 @@
 -- ATM10 MineColonies to AE2 Bridge Dashboard (Neon Tech Variant)
 -- Optimized for 5x3 Monitor with a Futuristic Dark Base Aesthetic
--- FULLY DECOUPLED MATRIX: Bypasses Java deadlocks by eliminating simultaneous peripheral queries
+-- 1.21.1 STABLE CORE: Overhauled query maps targeting modern item structures
 
 -- ====== CONFIGURATION ======
 local MONITOR_SIDE = "top"         
-local EXPORT_DIRECTION = "down"   -- Redirects item routing to hidden base cavity
-local REFRESH_RATE = 5             
+local EXPORT_DIRECTION = "down"   -- Targets the Netherite Barrel beneath the ME Bridge
+local REFRESH_RATE = 5             -- Kept at 5s safe polling rate before testing speed changes
 -- ===========================
 
 -- Shared thread communication states
@@ -51,7 +51,6 @@ local C_SUCCESS = colors.lime        -- Plasma Green (Active/Fulfilling)
 local C_WARN    = colors.orange      -- Quantum Amber (Partial/Pending)
 local C_FAIL    = colors.red         -- Critical Red (Missing/Offline)
 -- ==========================================
-
 local function drawHeader()
     monitor.setBackgroundColor(C_BG)
     monitor.clear()
@@ -145,13 +144,10 @@ local function drawDebugPanel()
         end
     end
 end
--- ==========================================
--- THREAD 1: THE RENDERING ENGINE
--- ==========================================
+
 local function renderLoop()
     while true do
         drawHeader()
-        
         local y = 9
         local hasPanel = hasActiveErrors or (#deliveryHistory > 0)
         local maxDisplayY = hasPanel and (h - 7) or (h - 1)
@@ -168,31 +164,23 @@ local function renderLoop()
                     monitor.write("... Buffer Overflow: Output Truncated ...")
                     break
                 end
-                
                 monitor.setCursorPos(2, y)
                 monitor.setTextColor(displayLine.color or C_TEXT)
                 monitor.write(displayLine.text)
                 y = y + 1
             end
         end
-        
         drawDebugPanel()
         sleep(0.5)
     end
 end
-
--- ==========================================
--- THREAD 2: PERIPHERAL INTEGRATOR (ROBUST SCHEMAS UNPACKED)
--- ==========================================
 local function networkWorker()
     term.clear()
-    term.setCursorPos(1,1)
-    print("=== LOGISTICS KERNEL ASYNC SYSTEM RUNNING ===")
-    
     while true do
+        term.setCursorPos(1,1)
+        print("=== LOGISTICS KERNEL ASYNC SYSTEM RUNNING ===")
         local colony = peripheral.find("colony_integrator")
         local ae2 = peripheral.find("me_bridge")
-        
         colonyConnected = (colony ~= nil)
         ae2Connected = (ae2 ~= nil)
         
@@ -212,14 +200,11 @@ local function networkWorker()
             else
                 hasActiveErrors = false
                 local tempRequests = {}
-                
                 print(":: Polled Network: " .. #requests .. " item frames at " .. os.date("%H:%M:%S"))
                 
                 for _, req in ipairs(requests) do
                     sleep(0.02)
-                    
                     local extractedItems = {}
-                    -- FIXED LAYOUT SCANNER: Avoid using the '#' operator on arbitrary table objects
                     if req.items and type(req.items) == "table" then
                         local elementsFound = false
                         for _, subItem in pairs(req.items) do
@@ -256,26 +241,20 @@ local function networkWorker()
                                 itemID = subNode
                                 displayName = activeItem.name or itemID
                             end
-                            
                             needed = tonumber(activeItem.count) or tonumber(activeItem.needed) or tonumber(activeItem.amount) or 0
                         elseif type(activeItem) == "string" then
                             itemID = activeItem
                             displayName = itemID
                         end
-                        
                         if needed == 0 then
                             needed = tonumber(req.count) or tonumber(req.needed) or tonumber(req.amount) or 0
                         end
                         
                         if itemID ~= "void:null" and needed > 0 then
-                            if not string.find(itemID, ":") then
-                                itemID = "minecraft:" .. itemID
-                            end
-                            
+                            if not string.find(itemID, ":") then itemID = "minecraft:" .. itemID end
                             displayName = displayName:gsub("minecraft:", ""):gsub("domum_ornamentum:", "")
                             displayName = displayName:gsub("^%l", string.upper):gsub("_", " ")
                             if #displayName > 22 then displayName = displayName:sub(1, 19) .. "..." end
-                            
                             local linePrefix = string.format("%-22s | %-5d | ", displayName, needed)
                             local available = 0
                             local craftable = false
@@ -283,7 +262,6 @@ local function networkWorker()
                             local checkSuccess, checkItem = pcall(function() 
                                 return ae2.getItem({item = itemID}) or ae2.getItem({name = itemID}) 
                             end)
-                            
                             if checkSuccess and checkItem then
                                 available = tonumber(checkItem.amount) or tonumber(checkItem.count) or 0
                                 craftable = checkItem.isCraftable or false
@@ -291,18 +269,23 @@ local function networkWorker()
                             
                             if available >= needed then
                                 table.insert(tempRequests, {text = linePrefix .. "▶ ROUTING", color = C_SUCCESS})
-                                pcall(function() 
-                                    return ae2.exportItem({item = itemID, count = needed}, EXPORT_DIRECTION)
-                                        or ae2.exportItem({name = itemID, count = needed}, EXPORT_DIRECTION)
-                                end)
-                                if available > 0 then addDelivery(displayName, needed) end
+                                local ok, amt = pcall(function() return ae2.exportItem({name = itemID, count = needed}, EXPORT_DIRECTION) end)
+                                if not ok or not amt or amt == 0 or amt == true then
+                                    ok, amt = pcall(function() return ae2.exportItem(itemID, needed, EXPORT_DIRECTION) end)
+                                end
+                                if ok and amt and amt ~= true and tonumber(amt) and tonumber(amt) > 0 then
+                                    addDelivery(displayName, tonumber(amt))
+                                elseif ok then addDelivery(displayName, needed) end
                             elseif available > 0 and available < needed then
                                 table.insert(tempRequests, {text = linePrefix .. "⚠ DEPLETED", color = C_WARN})
-                                pcall(function() 
-                                    return ae2.exportItem({item = itemID, count = available}, EXPORT_DIRECTION)
-                                        or ae2.exportItem({name = itemID, count = available}, EXPORT_DIRECTION)
-                                end)
-                                addDelivery(displayName, available)
+                                local ok, amt = pcall(function() return ae2.exportItem({name = itemID, count = available}, EXPORT_DIRECTION) end)
+                                if not ok or not amt or amt == 0 or amt == true then
+                                    ok, amt = pcall(function() return ae2.exportItem(itemID, available, EXPORT_DIRECTION) end)
+                                end
+                                if ok and amt and amt ~= true and tonumber(amt) and tonumber(amt) > 0 then
+                                    addDelivery(displayName, tonumber(amt))
+                                elseif ok then addDelivery(displayName, available) end
+                                
                                 if craftable then 
                                     local craftShortage = needed - available
                                     pcall(function() 
@@ -324,7 +307,6 @@ local function networkWorker()
                         end
                     end
                 end
-                
                 currentRequests = tempRequests
                 sleep(REFRESH_RATE)
             end
@@ -332,5 +314,4 @@ local function networkWorker()
     end
 end
 
--- ====== CONCURRENCY EXECUTIVE KERNEL ======
 parallel.waitForAny(renderLoop, networkWorker)
