@@ -184,7 +184,7 @@ local function renderLoop()
 end
 
 -- ==========================================
--- THREAD 2: THE PERIPHERAL INTEGRATOR (FIXED EXPORT PAYLOAD)
+-- THREAD 2: THE PERIPHERAL INTEGRATOR (FIXED EXPORT PIPELINE)
 -- ==========================================
 local function networkWorker()
     while true do
@@ -234,9 +234,9 @@ local function networkWorker()
                         local linePrefix = string.format("%-22s | %-5d | ", displayName, needed)
                         local available = 0
                         
-                        -- Modern advanced peripherals object lookup fallback
+                        -- Query AE2 using pure standardized structural strings
                         local aeSuccess, aeItem = pcall(function()
-                            return ae2.getItem({item = itemID}) or ae2.getItem({name = itemID})
+                            return ae2.getItem({name = itemID})
                         end)
                         
                         if aeSuccess and aeItem then
@@ -246,10 +246,9 @@ local function networkWorker()
                         if available >= needed then
                             table.insert(tempRequests, {text = linePrefix .. "▶ ROUTING", color = C_TEXT})
                             
-                            -- MODERN PAYLOAD STRUCT: Uses the correct nested item filter formatting
                             local ok = pcall(function()
-                                return ae2.exportItem({item = itemID, count = needed}, EXPORT_DIRECTION) 
-                                    or ae2.exportItemToPeripheral({item = itemID, count = needed}, EXPORT_DIRECTION)
+                                -- Clean format targeting standard 1.21 syntax explicitly
+                                return ae2.exportItem({name = itemID, count = needed}, EXPORT_DIRECTION)
                             end)
                             if ok then addDelivery(displayName, needed) end
                             
@@ -257,8 +256,7 @@ local function networkWorker()
                             table.insert(tempRequests, {text = linePrefix .. "⚠ DEPLETED (" .. available .. ")", color = C_TEXT})
                             
                             local ok = pcall(function()
-                                return ae2.exportItem({item = itemID, count = available}, EXPORT_DIRECTION)
-                                    or ae2.exportItemToPeripheral({item = itemID, count = available}, EXPORT_DIRECTION)
+                                return ae2.exportItem({name = itemID, count = available}, EXPORT_DIRECTION)
                             end)
                             if ok then addDelivery(displayName, available) end
                         else
