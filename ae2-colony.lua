@@ -1,10 +1,10 @@
 -- ATM10 MineColonies to AE2 Bridge Dashboard (Neon Tech Variant)
 -- Optimized for 5x3 Monitor with a Futuristic Dark Base Aesthetic
--- ZERO-LIST ENGINE: Stripped of heavy listing functions to guarantee 100% stability
+-- VERBOSE ENGINE: Configured to output dynamic execution telemetry onto the terminal
 
 -- ====== CONFIGURATION ======
 local MONITOR_SIDE = "top"         
-local EXPORT_DIRECTION = "down"   -- Target hidden chest underneath the ME Bridge
+local EXPORT_DIRECTION = "down"   -- Redirects item routing to hidden base cavity
 local REFRESH_RATE = 5             
 -- ===========================
 
@@ -184,18 +184,25 @@ local function renderLoop()
 end
 
 -- ==========================================
--- THREAD 2: PERIPHERAL INTEGRATOR (LIGHT EXPORT PROBES)
+-- THREAD 2: PERIPHERAL INTEGRATOR (TELEMETRY ENABLED)
 -- ==========================================
 local function networkWorker()
+    term.clear()
     while true do
+        term.setCursorPos(1,1)
+        print("=== LOGISTICS KERNEL PROCESSING TRACE ===")
+        print("Locating network interfaces...")
+        
         local colony = peripheral.find("colony_integrator")
         local ae2 = peripheral.find("me_bridge")
         
         if not colony or not ae2 then
             hasActiveErrors = true
             currentRequests = {}
+            print("[WARN] Peripherals missing. Retrying cycle...")
             sleep(REFRESH_RATE)
         else
+            print("Polling Colony Integrator requests...")
             isPolling = true
             local success, requests = pcall(function() return colony.getRequests() end)
             isPolling = false
@@ -203,13 +210,18 @@ local function networkWorker()
             if not success or not requests then
                 hasActiveErrors = true
                 currentRequests = {}
+                print("[CRITICAL] Colony integrator API thread-lock caught!")
                 sleep(REFRESH_RATE)
             else
                 hasActiveErrors = false
                 local tempRequests = {}
                 
-                for _, req in ipairs(requests) do
-                    -- Crucial yield to completely clear Java/Lua processing bottlenecks
+                -- Clear lower console partition to output changing loops cleanly
+                term.clearLine()
+                print("Active Colony Demands Indexed: " .. #requests)
+                print("-----------------------------------------")
+                
+                for idx, req in ipairs(requests) do
                     sleep(0.1)
                     
                     local itemID = "void:null"
@@ -239,13 +251,15 @@ local function networkWorker()
                             itemID = "minecraft:" .. itemID
                         end
                         
+                        -- Output live item processing strings onto the small terminal block
+                        print(string.format("[%d/%d] TARGET -> %s (Need %d)", idx, #requests, itemID:sub(1,25), needed))
+                        
                         displayName = displayName:gsub("minecraft:", ""):gsub("domum_ornamentum:", "")
                         displayName = displayName:gsub("^%l", string.upper):gsub("_", " ")
                         if #displayName > 22 then displayName = displayName:sub(1, 19) .. "..." end
                         
                         local linePrefix = string.format("%-22s | %-5d | ", displayName, needed)
                         
-                        -- LIGHT SINGLE QUERY: Look up only the requested item safely
                         local available = 0
                         local craftable = false
                         
@@ -258,25 +272,22 @@ local function networkWorker()
                             craftable = checkItem.isCraftable or false
                         end
                         
-                        -- Process delivery options
+                        print(string.format("      Stock: %d | Craftable: %s", available, tostring(craftable)))
+                        
                         if available >= needed then
                             table.insert(tempRequests, {text = linePrefix .. "▶ ROUTING", color = C_SUCCESS})
-                            
-                            local ok = pcall(function() 
+                            pcall(function() 
                                 return ae2.exportItem({item = itemID, count = needed}, EXPORT_DIRECTION)
                                     or ae2.exportItem({name = itemID, count = needed}, EXPORT_DIRECTION)
                             end)
-                            if ok then addDelivery(displayName, needed) end
-                            
+                            if available > 0 then addDelivery(displayName, needed) end
                         elseif available > 0 and available < needed then
                             table.insert(tempRequests, {text = linePrefix .. "⚠ DEPLETED", color = C_WARN})
-                            
-                            local ok = pcall(function() 
+                            pcall(function() 
                                 return ae2.exportItem({item = itemID, count = available}, EXPORT_DIRECTION)
                                     or ae2.exportItem({name = itemID, count = available}, EXPORT_DIRECTION)
                             end)
-                            if ok then addDelivery(displayName, available) end
-                            
+                            addDelivery(displayName, available)
                             if craftable then 
                                 local craftShortage = needed - available
                                 pcall(function() 
@@ -299,7 +310,9 @@ local function networkWorker()
                 end
                 
                 currentRequests = tempRequests
+                print("Cycle finished. Sleeping...")
                 sleep(REFRESH_RATE)
+                term.clear()
             end
         end
     end
