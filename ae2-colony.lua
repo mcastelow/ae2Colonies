@@ -4,7 +4,7 @@
 
 -- ====== CONFIGURATION ======
 local MONITOR_SIDE = "top"         
-local EXPORT_DIRECTION = "front"   
+local EXPORT_DIRECTION = "down"   -- ADJUSTED: Rotated path downward to target hidden chest cavity
 local REFRESH_RATE = 5             
 -- ===========================
 
@@ -107,7 +107,7 @@ local function drawHeader(colonyPresent, ae2Present)
 end
 
 local function drawDebugPanel()
-    -- COMPLIANCE: Screen error diagnostics hide entirely when working cleanly
+    -- COMPLIANCE Check: Error panels hide entirely when working cleanly
     if hasActiveErrors then
         local startY = h - 4
         monitor.setCursorPos(1, startY)
@@ -288,16 +288,16 @@ local function networkWorker()
                             if craftable then 
                                 local craftShortage = needed - available
                                 pcall(function() 
-                                    return ae2.craftItem({name = itemID, count = craftShortage})
-                                        or ae2.craftItem({item = itemID, count = craftShortage})
+                                    return ae2.craftItem({item = itemID, count = craftShortage})
+                                        or ae2.craftItem({name = itemID, count = craftShortage})
                                 end) 
                             end
                         else
                             if craftable then
                                 table.insert(tempRequests, {text = linePrefix .. "⚒ QUEUED", color = C_SUB})
                                 pcall(function() 
-                                    return ae2.craftItem({name = itemID, count = needed})
-                                        or ae2.craftItem({item = itemID, count = needed})
+                                    return ae2.craftItem({item = itemID, count = needed})
+                                        or ae2.craftItem({name = itemID, count = needed})
                                 end)
                             else
                                 table.insert(tempRequests, {text = linePrefix .. "✖ VOID", color = C_FAIL})
