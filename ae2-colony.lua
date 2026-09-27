@@ -144,3 +144,166 @@ local function drawDebugPanel()
         end
     end
 end
+-- ==========================================
+-- THREAD 1: THE RENDERING ENGINE
+-- ==========================================
+local function renderLoop()
+    while true do
+        local colonyPresent = peripheral.find("colony_integrator") ~= nil
+        local ae2Present = peripheral.find("me_bridge") ~= nil
+        
+        drawHeader(colonyPresent, ae2Present)
+        
+        local y = 9
+        local hasPanel = hasActiveErrors or (#deliveryHistory > 0)
+        local maxDisplayY = hasPanel and (h - 7) or (h - 1)
+        
+        if #currentRequests == 0 and not hasActiveErrors then
+            monitor.setCursorPos(2, y)
+            monitor.setTextColor(C_SUCCESS)
+            monitor.write("✔ Network Idle: All sector demands met.")
+        else
+            for _, displayLine in ipairs(currentRequests) do
+                if y > maxDisplayY then
+                    monitor.setCursorPos(2, y)
+                    monitor.setTextColor(C_WARN)
+                    monitor.write("... Buffer Overflow: Output Truncated ...")
+                    break
+                end
+                
+                monitor.setCursorPos(2, y)
+                monitor.setTextColor(displayLine.color or C_TEXT)
+                monitor.write(displayLine.text)
+                y = y + 1
+            end
+        end
+        
+        drawDebugPanel()
+        sleep(0.5)
+    end
+end
+
+-- ==========================================
+-- THREAD 2: PERIPHERAL INTEGRATOR (LIGHT EXPORT PROBES)
+-- ==========================================
+local function networkWorker()
+    while true do
+        local colony = peripheral.find("colony_integrator")
+        local ae2 = peripheral.find("me_bridge")
+        
+        if not colony or not ae2 then
+            hasActiveErrors = true
+            currentRequests = {}
+            sleep(REFRESH_RATE)
+        else
+            isPolling = true
+            local success, requests = pcall(function() return colony.getRequests() end)
+            isPolling = false
+            
+            if not success or not requests then
+                hasActiveErrors = true
+                currentRequests = {}
+                sleep(REFRESH_RATE)
+            else
+                hasActiveErrors = false
+                local tempRequests = {}
+                
+                for _, req in ipairs(requests) do
+                    -- Crucial yield to completely clear Java/Lua processing bottlenecks
+                    sleep(0.1)
+                    
+                    local itemID = "void:null"
+                    local displayName = "Unknown Block"
+                    
+                    if req.items and type(req.items) == "table" then
+                        local targetNode = req.items
+                        if type(targetNode) == "table" then
+                            itemID = targetNode.name or targetNode.id or "void:null"
+                            displayName = targetNode.displayName or targetNode.name or displayName
+                        end
+                    elseif type(req.item) == "table" then
+                        itemID = req.item.name or req.item.id or "void:null"
+                        displayName = req.item.displayName or req.item.name or displayName
+                    elseif type(req.item) == "string" then
+                        itemID = req.item
+                        displayName = req.name or itemID
+                    else
+                        itemID = req.id or req.resource or "void:null"
+                        displayName = req.name or itemID
+                    end
+                    
+                    local needed = tonumber(req.count) or tonumber(req.needed) or tonumber(req.amount) or 0
+                    
+                    if itemID ~= "void:null" and needed > 0 then
+                        if not string.find(itemID, ":") then
+                            itemID = "minecraft:" .. itemID
+                        end
+                        
+                        displayName = displayName:gsub("minecraft:", ""):gsub("domum_ornamentum:", "")
+                        displayName = displayName:gsub("^%l", string.upper):gsub("_", " ")
+                        if #displayName > 22 then displayName = displayName:sub(1, 19) .. "..." end
+                        
+                        local linePrefix = string.format("%-22s | %-5d | ", displayName, needed)
+                        
+                        -- LIGHT SINGLE QUERY: Look up only the requested item safely
+                        local available = 0
+                        local craftable = false
+                        
+                        local checkSuccess, checkItem = pcall(function() 
+                            return ae2.getItem({item = itemID}) or ae2.getItem({name = itemID}) 
+                        end)
+                        
+                        if checkSuccess and checkItem then
+                            available = tonumber(checkItem.amount) or tonumber(checkItem.count) or 0
+                            craftable = checkItem.isCraftable or false
+                        end
+                        
+                        -- Process delivery options
+                        if available >= needed then
+                            table.insert(tempRequests, {text = linePrefix .. "▶ ROUTING", color = C_SUCCESS})
+                            
+                            local ok = pcall(function() 
+                                return ae2.exportItem({item = itemID, count = needed}, EXPORT_DIRECTION)
+                                    or ae2.exportItem({name = itemID, count = needed}, EXPORT_DIRECTION)
+                            end)
+                            if ok then addDelivery(displayName, needed) end
+                            
+                        elseif available > 0 and available < needed then
+                            table.insert(tempRequests, {text = linePrefix .. "⚠ DEPLETED", color = C_WARN})
+                            
+                            local ok = pcall(function() 
+                                return ae2.exportItem({item = itemID, count = available}, EXPORT_DIRECTION)
+                                    or ae2.exportItem({name = itemID, count = available}, EXPORT_DIRECTION)
+                            end)
+                            if ok then addDelivery(displayName, available) end
+                            
+                            if craftable then 
+                                local craftShortage = needed - available
+                                pcall(function() 
+                                    local done = ae2.craftItem({item = itemID, count = craftShortage})
+                                    if not done then ae2.craftItem({name = itemID, count = craftShortage}) end
+                                end) 
+                            end
+                        else
+                            if craftable then
+                                table.insert(tempRequests, {text = linePrefix .. "⚒ QUEUED", color = C_SUB})
+                                pcall(function() 
+                                    local done = ae2.craftItem({item = itemID, count = needed})
+                                    if not done then ae2.craftItem({name = itemID, count = needed}) end
+                                end)
+                            else
+                                table.insert(tempRequests, {text = linePrefix .. "✖ VOID", color = C_FAIL})
+                            end
+                        end
+                    end
+                end
+                
+                currentRequests = tempRequests
+                sleep(REFRESH_RATE)
+            end
+        end
+    end
+end
+
+-- ====== CONCURRENCY EXECUTIVE KERNEL ======
+parallel.waitForAny(renderLoop, networkWorker)
