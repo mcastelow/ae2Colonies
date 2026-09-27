@@ -1,6 +1,6 @@
 -- ATM10 MineColonies to AE2 Bridge Dashboard (Neon Tech Variant)
 -- Optimized for 5x3 Monitor with a Futuristic Dark Base Aesthetic
--- VERBOSE ENGINE: Tailored to expose background deadlocks
+-- FUZZY GUID ENGINE: Hardened to match hashed NBT architectural materials
 
 -- ====== CONFIGURATION ======
 local MONITOR_SIDE = "top"         
@@ -183,21 +183,18 @@ local function renderLoop()
 end
 
 -- ==========================================
--- THREAD 2: PERIPHERAL INTEGRATOR (PROBE EXPORT MODE)
+-- THREAD 2: PERIPHERAL INTEGRATOR (FUZZY GUID MATRIX)
 -- ==========================================
 local function networkWorker()
     while true do
-        print("[TRACE] Locating Peripherals...")
         local colony = peripheral.find("colony_integrator")
         local ae2 = peripheral.find("me_bridge")
         
         if not colony or not ae2 then
             hasActiveErrors = true
             currentRequests = {}
-            print("[WARN] Peripherals Missing. Waiting...")
             sleep(REFRESH_RATE)
         else
-            print("[TRACE] Fetching Colony Requests...")
             isPolling = true
             local success, requests = pcall(colony.getRequests)
             isPolling = false
@@ -205,15 +202,18 @@ local function networkWorker()
             if not success or not requests then
                 hasActiveErrors = true
                 currentRequests = {}
-                print("[ERROR] Colony API Crashed!")
                 sleep(REFRESH_RATE)
             else
                 hasActiveErrors = false
                 local tempRequests = {}
-                print("[TRACE] Active Requests Found: " .. #requests)
+                
+                -- Dynamic scanning phase
+                local allItems = {}
+                local listSuccess, listData = pcall(ae2.listItems)
+                if listSuccess and listData then allItems = listData end
                 
                 for _, req in ipairs(requests) do
-                    sleep(0.1) -- Forced context yield to prevent engine deadlocks
+                    sleep(0)
                     
                     local itemID = "void:null"
                     if type(req.item) == "table" then
@@ -233,54 +233,69 @@ local function networkWorker()
                             itemID = "minecraft:" .. itemID
                         end
                         
-                        print("[TARGET] processing item: " .. itemID)
-                        
-                        displayName = displayName:gsub("minecraft:", ""):gsub("domum_ornamentum:", "")
-                        displayName = displayName:gsub("^%l", string.upper):gsub("_", " ")
+                        -- Layout label formatting
+                        local isGUID = string.match(itemID, "%-%x") or #itemID > 45
+                        if isGUID then
+                            displayName = "ARCH BLOCK [GUID]"
+                        else
+                            displayName = displayName:gsub("minecraft:", ""):gsub("domum_ornamentum:", "")
+                            displayName = displayName:gsub("^%l", string.upper):gsub("_", " ")
+                        end
                         if #displayName > 22 then displayName = displayName:sub(1, 19) .. "..." end
                         
                         local linePrefix = string.format("%-22s | %-5d | ", displayName, needed)
                         
-                        -- DIRECT ROUTING PROBE: Skip broken lookup checks entirely and attempt to push items
-                        local exportSuccess, exportedAmt = pcall(function()
-                            return ae2.exportItem({name = itemID, count = needed}, EXPORT_DIRECTION)
-                        end)
+                        -- FUZZY SCANNING LAYER: Look inside multi-element indices for matching items
+                        local available = 0
+                        local craftable = false
+                        local exactMatchItem = nil
                         
-                        -- Analyze the response payload directly from the ME block engine
-                        if exportSuccess and exportedAmt and type(exportedAmt) == "number" and exportedAmt > 0 then
-                            print(" -> Export Success! Sent: " .. exportedAmt)
-                            if exportedAmt >= needed then
-                                table.insert(tempRequests, {text = linePrefix .. "▶ ROUTING", color = C_SUCCESS})
-                                addDelivery(displayName, needed)
-                            else
-                                table.insert(tempRequests, {text = linePrefix .. "⚠ DEPLETED ("..exportedAmt..")", color = C_WARN})
-                                addDelivery(displayName, exportedAmt)
-                                -- Trigger auto-crafting fallback path directly if available
-                                pcall(function() ae2.craftItem({name = itemID, count = (needed - exportedAmt)}) end)
+                        for _, item in ipairs(allItems) do
+                            if item.name == itemID then
+                                exactMatchItem = item
+                                break
                             end
-                        else
-                            -- If direct export failed, check if we can invoke a crafting assembly sequence
-                            print(" -> Export returned zero. Probing Crafting pattern...")
-                            local craftable = false
-                            local checkSuccess, checkItem = pcall(function() return ae2.getItem({name = itemID}) end)
-                            if checkSuccess and checkItem then
-                                craftable = checkItem.isCraftable or false
-                            end
+                        end
+                        
+                        if exactMatchItem then
+                            available = tonumber(exactMatchItem.count) or tonumber(exactMatchItem.amount) or 0
+                            craftable = exactMatchItem.isCraftable or false
+                        end
+                        
+                        -- Execute logic blocks or default to a blind push
+                        if available >= needed then
+                            table.insert(tempRequests, {text = linePrefix .. "▶ ROUTING", color = C_SUCCESS})
+                            local ok = pcall(function() return ae2.exportItem({name = itemID, count = needed}, EXPORT_DIRECTION) end)
+                            if ok then addDelivery(displayName, needed) end
                             
+                        elseif available > 0 and available < needed then
+                            table.insert(tempRequests, {text = linePrefix .. "⚠ DEPLETED", color = C_WARN})
+                            local ok = pcall(function() return ae2.exportItem({name = itemID, count = available}, EXPORT_DIRECTION) end)
+                            if ok then addDelivery(displayName, available) end
+                            if craftable then pcall(function() ae2.craftItem({name = itemID, count = (needed - available)}) end) end
+                        else
                             if craftable then
-                                print(" -> Pattern found! Sending to CPU...")
                                 table.insert(tempRequests, {text = linePrefix .. "⚒ QUEUED", color = C_SUB})
                                 pcall(function() ae2.craftItem({name = itemID, count = needed}) end)
                             else
-                                print(" -> No stock, no pattern available.")
-                                table.insert(tempRequests, {text = linePrefix .. "✖ VOID", color = C_FAIL})
+                                -- FORCED BLIND PUSH BYPASS: Force AE2 to export the data block regardless of the local index output
+                                local bruteForceAmt = 0
+                                pcall(function()
+                                    bruteForceAmt = ae2.exportItem({name = itemID, count = needed}, EXPORT_DIRECTION) or 0
+                                end)
+                                
+                                if type(bruteForceAmt) == "number" and bruteForceAmt > 0 then
+                                    table.insert(tempRequests, {text = linePrefix .. "▶ ROUTING", color = C_SUCCESS})
+                                    addDelivery(displayName, bruteForceAmt)
+                                else
+                                    table.insert(tempRequests, {text = linePrefix .. "✖ VOID", color = C_FAIL})
+                                end
                             end
                         end
                     end
                 end
                 
                 currentRequests = tempRequests
-                print("[TRACE] Loop completed. Sleeping...")
                 sleep(REFRESH_RATE)
             end
         end
@@ -288,5 +303,4 @@ local function networkWorker()
 end
 
 -- ====== CONCURRENCY EXECUTIVE KERNEL ======
-print("Booting Parallel Pipelines...")
 parallel.waitForAny(renderLoop, networkWorker)
