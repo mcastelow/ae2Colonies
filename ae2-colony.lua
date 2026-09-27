@@ -214,19 +214,28 @@ local function networkWorker()
                 for _, req in ipairs(requests) do
                     sleep(0)
                     
+                    -- Deep parsing lookup to match item identifier string patterns safely
                     local itemID = "void:null"
-                    if type(req.item) == "table" and req.item.name then
-                        itemID = req.item.name
+                    if type(req.item) == "table" then
+                        itemID = req.item.name or req.item.id or "void:null"
                     elseif type(req.item) == "string" then
                         itemID = req.item
                     else
                         itemID = req.id or req.resource or "void:null"
                     end
                     
+                    -- Sanity gate formatting wrapper
+                    if type(itemID) == "table" then itemID = "void:null" end
+                    
                     local needed = tonumber(req.needed) or tonumber(req.amount) or tonumber(req.count) or 0
                     local displayName = req.name or req.displayName or itemID
                     
                     if itemID ~= "void:null" and needed > 0 then
+                        -- Enforce true standard colon mapping namespaces for AE2 systems
+                        if not string.find(itemID, ":") then
+                            itemID = "minecraft:" .. itemID
+                        end
+                        
                         displayName = displayName:gsub("minecraft:", ""):gsub("domum_ornamentum:", "")
                         displayName = displayName:gsub("^%l", string.upper):gsub("_", " ")
                         if #displayName > 22 then displayName = displayName:sub(1, 19) .. "..." end
@@ -234,7 +243,7 @@ local function networkWorker()
                         local linePrefix = string.format("%-22s | %-5d | ", displayName, needed)
                         local available = 0
                         
-                        -- Query AE2 using pure standardized structural strings
+                        -- CRITICAL UPDATE: Query AE2 using standardized table dictionary key format
                         local aeSuccess, aeItem = pcall(function()
                             return ae2.getItem({name = itemID})
                         end)
@@ -244,23 +253,33 @@ local function networkWorker()
                         end
                         
                         if available >= needed then
-                            table.insert(tempRequests, {text = linePrefix .. "▶ ROUTING", color = C_TEXT})
+                            table.insert(tempRequests, {text = linePrefix .. "▶ ROUTING", color = C_SUCCESS})
                             
                             local ok = pcall(function()
-                                -- Clean format targeting standard 1.21 syntax explicitly
                                 return ae2.exportItem({name = itemID, count = needed}, EXPORT_DIRECTION)
                             end)
                             if ok then addDelivery(displayName, needed) end
                             
                         elseif available > 0 and available < needed then
-                            table.insert(tempRequests, {text = linePrefix .. "⚠ DEPLETED (" .. available .. ")", color = C_TEXT})
+                            table.insert(tempRequests, {text = linePrefix .. "⚠ DEPLETED (" .. available .. ")", color = C_WARN})
                             
                             local ok = pcall(function()
                                 return ae2.exportItem({name = itemID, count = available}, EXPORT_DIRECTION)
                             end)
                             if ok then addDelivery(displayName, available) end
                         else
-                            table.insert(tempRequests, {text = linePrefix .. "✖ VOID", color = C_FAIL})
+                            -- If the fallback dictionary completely failed, make a brute-force raw export attempt anyway!
+                            local bruteForceExported = 0
+                            pcall(function()
+                                bruteForceExported = ae2.exportItem({name = itemID, count = needed}, EXPORT_DIRECTION) or 0
+                            end)
+                            
+                            if type(bruteForceExported) == "number" and bruteForceExported > 0 then
+                                table.insert(tempRequests, {text = linePrefix .. "▶ ROUTING", color = C_SUCCESS})
+                                addDelivery(displayName, bruteForceExported)
+                            else
+                                table.insert(tempRequests, {text = linePrefix .. "✖ VOID", color = C_FAIL})
+                            end
                         end
                     end
                 end
