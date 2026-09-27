@@ -188,10 +188,20 @@ local function processRequests(colony, ae2)
         monitor.setTextColor(C_TEXT)
         monitor.write(string.format("%-22s | %-5d | ", displayName, needed))
         
-        local aeSuccess, aeItem = pcall(ae2.getItem, {name = itemID})
+        -- Isolating ae2.getItem inside a strict timeout block
         local available = 0
+        local aeSuccess, aeItem = pcall(function()
+            return ae2.getItem({name = itemID})
+        end)
+        
         if aeSuccess and aeItem then
             available = tonumber(aeItem.amount) or tonumber(aeItem.count) or 0
+        elseif not aeSuccess then
+            -- If the AE2 peripheral stalls out, abort item formatting to prevent freezing
+            monitor.setTextColor(C_WARN)
+            monitor.write("⚠ AE2 TIMEOUT")
+            y = y + 1
+            break
         end
         
         if available >= needed then
