@@ -183,7 +183,7 @@ local function renderLoop()
 end
 
 -- ==========================================
--- THREAD 2: PERIPHERAL INTEGRATOR (1.21.1 FIXED METRICS)
+-- THREAD 2: PERIPHERAL INTEGRATOR (1.21.1 BALANCED PARSING)
 -- ==========================================
 local function networkWorker()
     while true do
@@ -221,9 +221,8 @@ local function networkWorker()
                     local itemID = "void:null"
                     local displayName = "Unknown Block"
                     
-                    -- Deep inspection pattern resolver to unwrap modern 1.21 item collections safely
                     if req.items and type(req.items) == "table" then
-                        local firstItem = req.items[1] or req.items
+                        local firstItem = req.items
                         if type(firstItem) == "table" then
                             itemID = firstItem.name or firstItem.id or "void:null"
                             displayName = firstItem.displayName or firstItem.name or displayName
@@ -288,9 +287,10 @@ local function networkWorker()
                             if ok then addDelivery(displayName, available) end
                             
                             if craftable then 
+                                local craftShortage = needed - available
                                 pcall(function() 
-                                    local done = ae2.craftItem({item = itemID, count = (needed - available)})
-                                    if not done then ae2.craftItem({name = itemID, count = (needed - available)}) end
+                                    local done = ae2.craftItem({item = itemID, count = craftShortage})
+                                    if not done then ae2.craftItem({name = itemID, count = craftShortage}) end
                                 end) 
                             end
                         else
