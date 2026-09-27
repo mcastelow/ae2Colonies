@@ -1,6 +1,6 @@
 -- ATM10 MineColonies to AE2 Bridge Dashboard (Neon Tech Variant)
 -- Optimized for 5x3 Monitor with a Futuristic Dark Base Aesthetic
--- FUZZY GUID ENGINE: Hardened to match hashed NBT architectural materials
+-- HYBRID EXPORT ENGINE: Bypasses 1.21 NBT data blocks using structural wrappers
 
 -- ====== CONFIGURATION ======
 local MONITOR_SIDE = "top"         
@@ -107,6 +107,7 @@ local function drawHeader(colonyPresent, ae2Present)
 end
 
 local function drawDebugPanel()
+    -- FIXED PIPELINE REQUIREMENT: Error logging panels only show when there is an actual system error
     if hasActiveErrors then
         local startY = h - 4
         monitor.setCursorPos(1, startY)
@@ -183,7 +184,7 @@ local function renderLoop()
 end
 
 -- ==========================================
--- THREAD 2: PERIPHERAL INTEGRATOR (FUZZY GUID MATRIX)
+-- THREAD 2: PERIPHERAL INTEGRATOR (FUZZY NBT RESOLVER)
 -- ==========================================
 local function networkWorker()
     while true do
@@ -207,10 +208,10 @@ local function networkWorker()
                 hasActiveErrors = false
                 local tempRequests = {}
                 
-                -- Dynamic scanning phase
-                local allItems = {}
-                local listSuccess, listData = pcall(ae2.listItems)
-                if listSuccess and listData then allItems = listData end
+                -- Download system item references dynamically
+                local systemItems = {}
+                local listSuccess, listData = pcall(function() return ae2.listItems() or ae2.getItems() end)
+                if listSuccess and listData then systemItems = listData end
                 
                 for _, req in ipairs(requests) do
                     sleep(0)
@@ -233,10 +234,10 @@ local function networkWorker()
                             itemID = "minecraft:" .. itemID
                         end
                         
-                        -- Layout label formatting
-                        local isGUID = string.match(itemID, "%-%x") or #itemID > 45
+                        -- Handle display formatting for dynamic GUID fields safely
+                        local isGUID = string.match(itemID, "%-%x") or #itemID > 40
                         if isGUID then
-                            displayName = "ARCH BLOCK [GUID]"
+                            displayName = "DOMUM ARCH BLOCK"
                         else
                             displayName = displayName:gsub("minecraft:", ""):gsub("domum_ornamentum:", "")
                             displayName = displayName:gsub("^%l", string.upper):gsub("_", " ")
@@ -245,51 +246,60 @@ local function networkWorker()
                         
                         local linePrefix = string.format("%-22s | %-5d | ", displayName, needed)
                         
-                        -- FUZZY SCANNING LAYER: Look inside multi-element indices for matching items
+                        -- CRITICAL UPGRADE: Match against cached data objects or resolve fingerprints
                         local available = 0
                         local craftable = false
-                        local exactMatchItem = nil
+                        local bestFingerprint = nil
                         
-                        for _, item in ipairs(allItems) do
+                        for _, item in ipairs(systemItems) do
                             if item.name == itemID then
-                                exactMatchItem = item
+                                available = tonumber(item.count) or tonumber(item.amount) or 0
+                                craftable = item.isCraftable or false
+                                bestFingerprint = item.fingerprint or item.fingerPrint
                                 break
                             end
                         end
                         
-                        if exactMatchItem then
-                            available = tonumber(exactMatchItem.count) or tonumber(exactMatchItem.amount) or 0
-                            craftable = exactMatchItem.isCraftable or false
+                        -- EXPORT DISPATCH ROUTINES
+                        local routingSuccess = false
+                        local exportedAmt = 0
+                        
+                        if available > 0 or isGUID then
+                            -- Try standard signature format first
+                            local ok, amt = pcall(function() 
+                                return ae2.exportItem({name = itemID, count = math.min(needed, available > 0 and available or needed)}, EXPORT_DIRECTION) 
+                            end)
+                            
+                            -- Fallback payload option targeting active peripheral slots
+                            if not ok or not amt or amt == 0 then
+                                ok, amt = pcall(function()
+                                    local query = bestFingerprint and {fingerprint = bestFingerprint, count = needed} or {name = itemID, count = needed}
+                                    return ae2.exportItemToPeripheral(query, EXPORT_DIRECTION)
+                                end)
+                            end
+                            
+                            if ok and amt and type(amt) == "number" and amt > 0 then
+                                routingSuccess = true
+                                exportedAmt = amt
+                            end
                         end
                         
-                        -- Execute logic blocks or default to a blind push
-                        if available >= needed then
-                            table.insert(tempRequests, {text = linePrefix .. "▶ ROUTING", color = C_SUCCESS})
-                            local ok = pcall(function() return ae2.exportItem({name = itemID, count = needed}, EXPORT_DIRECTION) end)
-                            if ok then addDelivery(displayName, needed) end
-                            
-                        elseif available > 0 and available < needed then
-                            table.insert(tempRequests, {text = linePrefix .. "⚠ DEPLETED", color = C_WARN})
-                            local ok = pcall(function() return ae2.exportItem({name = itemID, count = available}, EXPORT_DIRECTION) end)
-                            if ok then addDelivery(displayName, available) end
-                            if craftable then pcall(function() ae2.craftItem({name = itemID, count = (needed - available)}) end) end
+                        -- Process final screen flags based on result profiles
+                        if routingSuccess then
+                            if exportedAmt >= needed then
+                                table.insert(tempRequests, {text = linePrefix .. "▶ ROUTING", color = C_SUCCESS})
+                                addDelivery(displayName, needed)
+                            else
+                                table.insert(tempRequests, {text = linePrefix .. "⚠ PARTIAL", color = C_WARN})
+                                addDelivery(displayName, exportedAmt)
+                                if craftable then pcall(function() ae2.craftItem({name = itemID, count = (needed - exportedAmt)}) end) end
+                            end
                         else
                             if craftable then
                                 table.insert(tempRequests, {text = linePrefix .. "⚒ QUEUED", color = C_SUB})
                                 pcall(function() ae2.craftItem({name = itemID, count = needed}) end)
                             else
-                                -- FORCED BLIND PUSH BYPASS: Force AE2 to export the data block regardless of the local index output
-                                local bruteForceAmt = 0
-                                pcall(function()
-                                    bruteForceAmt = ae2.exportItem({name = itemID, count = needed}, EXPORT_DIRECTION) or 0
-                                end)
-                                
-                                if type(bruteForceAmt) == "number" and bruteForceAmt > 0 then
-                                    table.insert(tempRequests, {text = linePrefix .. "▶ ROUTING", color = C_SUCCESS})
-                                    addDelivery(displayName, bruteForceAmt)
-                                else
-                                    table.insert(tempRequests, {text = linePrefix .. "✖ VOID", color = C_FAIL})
-                                end
+                                table.insert(tempRequests, {text = linePrefix .. "✖ VOID", color = C_FAIL})
                             end
                         end
                     end
