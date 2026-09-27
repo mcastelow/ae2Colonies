@@ -107,7 +107,6 @@ local function drawHeader(colonyPresent, ae2Present)
 end
 
 local function drawDebugPanel()
-    -- HIDES ENTIRELY WHEN WORKING PROPERLY: Only active during an error flag state
     if hasActiveErrors then
         local startY = h - 4
         monitor.setCursorPos(1, startY)
@@ -184,7 +183,7 @@ local function renderLoop()
 end
 
 -- ==========================================
--- THREAD 2: PERIPHERAL INTEGRATOR (TELEMETRY ENABLED)
+-- THREAD 2: PERIPHERAL INTEGRATOR (FIXED QUANTITY SCHEMAS)
 -- ==========================================
 local function networkWorker()
     term.clear()
@@ -216,7 +215,6 @@ local function networkWorker()
                 hasActiveErrors = false
                 local tempRequests = {}
                 
-                -- Clear lower console partition to output changing loops cleanly
                 term.clearLine()
                 print("Active Colony Demands Indexed: " .. #requests)
                 print("-----------------------------------------")
@@ -226,16 +224,20 @@ local function networkWorker()
                     
                     local itemID = "void:null"
                     local displayName = "Unknown Block"
+                    local needed = 0
                     
+                    -- Extract the identifier string and dynamic layout names safely
                     if req.items and type(req.items) == "table" then
                         local targetNode = req.items
                         if type(targetNode) == "table" then
                             itemID = targetNode.name or targetNode.id or "void:null"
                             displayName = targetNode.displayName or targetNode.name or displayName
+                            needed = tonumber(targetNode.count) or tonumber(targetNode.needed) or tonumber(targetNode.amount) or 0
                         end
                     elseif type(req.item) == "table" then
                         itemID = req.item.name or req.item.id or "void:null"
                         displayName = req.item.displayName or req.item.name or displayName
+                        needed = tonumber(req.item.count) or tonumber(req.item.needed) or tonumber(req.item.amount) or 0
                     elseif type(req.item) == "string" then
                         itemID = req.item
                         displayName = req.name or itemID
@@ -244,14 +246,16 @@ local function networkWorker()
                         displayName = req.name or itemID
                     end
                     
-                    local needed = tonumber(req.count) or tonumber(req.needed) or tonumber(req.amount) or 0
+                    -- Fallback: If needed count wasn't found nested inside a subtable, read top-level keys
+                    if needed == 0 then
+                        needed = tonumber(req.count) or tonumber(req.needed) or tonumber(req.amount) or 0
+                    end
                     
                     if itemID ~= "void:null" and needed > 0 then
                         if not string.find(itemID, ":") then
                             itemID = "minecraft:" .. itemID
                         end
                         
-                        -- Output live item processing strings onto the small terminal block
                         print(string.format("[%d/%d] TARGET -> %s (Need %d)", idx, #requests, itemID:sub(1,25), needed))
                         
                         displayName = displayName:gsub("minecraft:", ""):gsub("domum_ornamentum:", "")
@@ -306,9 +310,13 @@ local function networkWorker()
                                 table.insert(tempRequests, {text = linePrefix .. "✖ VOID", color = C_FAIL})
                             end
                         end
+                    else
+                        -- Telemetry fallback logging for zero quantities
+                        print(string.format("[%d/%d] FILTERED OUT -> ID: %s (Qty was 0)", idx, #requests, itemID:sub(1,15)))
                     end
                 end
                 
+                -- Atomic thread-safe map swap
                 currentRequests = tempRequests
                 print("Cycle finished. Sleeping...")
                 sleep(REFRESH_RATE)
