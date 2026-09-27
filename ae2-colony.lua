@@ -1,6 +1,6 @@
 -- ATM10 MineColonies to AE2 Bridge Dashboard (Neon Tech Variant)
 -- Optimized for 5x3 Monitor with a Futuristic Dark Base Aesthetic
--- 1.21.1 HYPER-STABLE ADVANCED PERIPHERALS DISPATCH ENGINE
+-- FUZZY MATRIX DISCOVERY CORE: Zero-failure string mapping and flat routing parameters
 
 -- ====== CONFIGURATION ======
 local MONITOR_SIDE = "top"         
@@ -120,7 +120,7 @@ local function drawHeader()
 end
 
 local function drawDebugPanel()
-    -- COMPLIANCE POLICY: Secondary logging panel completely hidden when hasActiveErrors flags false
+    -- EXPLICIT COMPLIANCE: Error panel completely hides if hasActiveErrors resolves to false
     if hasActiveErrors then
         local startY = h - 4
         monitor.setCursorPos(1, startY)
@@ -217,6 +217,21 @@ local function networkWorker()
                 local tempRequests = {}
                 print(":: Polled Network: " .. #requests .. " groups at " .. os.date("%H:%M:%S"))
                 
+                -- FUZZY DISCOVERY SCAN: Cache everything in storage via string indexing to bypass key bugs
+                local aeInventory = {}
+                local listSuccess, listData = pcall(function() return ae2.listItems() or ae2.getItems() end)
+                if listSuccess and listData then
+                    for _, item in ipairs(listData) do
+                        local nameKey = item.name or item.id
+                        if nameKey then
+                            aeInventory[nameKey] = {
+                                amount = tonumber(item.amount) or tonumber(item.count) or 0,
+                                craftable = item.isCraftable or item.craftable or false
+                            }
+                        end
+                    end
+                end
+                
                 for _, req in ipairs(requests) do
                     sleep(0.01)
                     
@@ -252,56 +267,62 @@ local function networkWorker()
                             displayName = itemID
                         end
                         
-                        if needed == 0 then
-                            needed = tonumber(req.count) or tonumber(req.needed) or tonumber(req.amount) or 0
+                        -- Enforce top-level requirement extraction values to maintain correct totals
+                        if needed == 0 or needed == 1 then
+                            needed = tonumber(req.count) or tonumber(req.needed) or tonumber(req.amount) or needed
                         end
                         
                         if itemID ~= "void:null" and needed > 0 then
                             if not string.find(itemID, ":") then itemID = "minecraft:" .. itemID end
+                            
                             displayName = displayName:gsub("minecraft:", ""):gsub("domum_ornamentum:", "")
                             displayName = displayName:gsub("^%l", string.upper):gsub("_", " ")
                             if #displayName > 22 then displayName = displayName:sub(1, 19) .. "..." end
                             
                             local linePrefix = string.format("%-22s | %-5d | ", displayName, needed)
-                            local available = 0
-                            local craftable = false
                             
-                            -- MODERN 1.21 OBJECT LOOKUP: Identifies items using the required token format
-                            local checkSuccess, checkItem = pcall(function() return ae2.getItem({id = itemID}) end)
-                            if checkSuccess and checkItem then
-                                available = tonumber(checkItem.amount) or tonumber(checkItem.count) or 0
-                                craftable = checkItem.isCraftable or false
-                            else
-                                local altSuccess, altItem = pcall(function() return ae2.getItem({name = itemID}) end)
-                                if altSuccess and altItem then
-                                    available = tonumber(altItem.amount) or tonumber(altItem.count) or 0
-                                    craftable = altItem.isCraftable or false
+                            -- Extract data from our clean fuzzy cache string map
+                            local matchData = aeInventory[itemID]
+                            local available = matchData and matchData.amount or 0
+                            local craftable = matchData and matchData.craftable or false
+                            
+                            -- Fallback: If cache lookup came back empty, run single item query checks
+                            if available == 0 and not craftable then
+                                local singleSuccess, singleItem = pcall(function() return ae2.getItem({name = itemID}) or ae2.getItem({item = itemID}) end)
+                                if singleSuccess and singleItem then
+                                    available = tonumber(singleItem.amount) or tonumber(singleItem.count) or 0
+                                    craftable = singleItem.isCraftable or singleItem.craftable or false
                                 end
                             end
                             
                             if available >= needed then
                                 table.insert(tempRequests, {text = linePrefix .. "▶ ROUTING", color = C_SUCCESS})
                                 
-                                -- Modernized 1.21 AP target wrappers
-                                pcall(function() return ae2.exportItemToPeripheral({id = itemID, count = needed}, EXPORT_DIRECTION) end)
-                                pcall(function() return ae2.exportItem({id = itemID, count = needed}, EXPORT_DIRECTION) end)
-                                addDelivery(displayName, needed)
+                                -- 1.21 HYPER-STABLE EXTRACTION DISPATCH ENGINE
+                                local ok = pcall(function() return ae2.exportItem({name = itemID, count = needed}, EXPORT_DIRECTION) end)
+                                if not ok then
+                                    ok = pcall(function() return ae2.exportItemToPeripheral({id = itemID, count = needed}, EXPORT_DIRECTION) end)
+                                end
+                                if ok then addDelivery(displayName, needed) end
                                 
                             elseif available > 0 and available < needed then
-                                table.insert(tempRequests, {text = linePrefix .. "⚠ DEPLETED", color = C_WARN})
+                                table.insert(tempRequests, {text = linePrefix .. "⚠ DEPLETED (" .. available .. ")", color = C_WARN})
                                 
-                                pcall(function() return ae2.exportItemToPeripheral({id = itemID, count = available}, EXPORT_DIRECTION) end)
-                                pcall(function() return ae2.exportItem({id = itemID, count = available}, EXPORT_DIRECTION) end)
-                                addDelivery(displayName, available)
-                                
-                                if craftable then 
-                                    local craftShortage = needed - available
-                                    pcall(function() return ae2.requestCrafting({id = itemID, count = craftShortage}) end) 
+                                local ok = pcall(function() return ae2.exportItem({name = itemID, count = available}, EXPORT_DIRECTION) end)
+                                if not ok then
+                                    ok = pcall(function() return ae2.exportItemToPeripheral({id = itemID, count = available}, EXPORT_DIRECTION) end)
+                                end
+                                if ok then 
+                                    addDelivery(displayName, available)
+                                    if craftable then 
+                                        local craftShortage = needed - available
+                                        pcall(function() return ae2.requestCrafting({id = itemID, count = craftShortage}) or ae2.craftItem({name = itemID, count = craftShortage}) end) 
+                                    end
                                 end
                             else
                                 if craftable then
                                     table.insert(tempRequests, {text = linePrefix .. "⚒ QUEUED", color = C_SUB})
-                                    pcall(function() return ae2.requestCrafting({id = itemID, count = needed}) end)
+                                    pcall(function() return ae2.requestCrafting({id = itemID, count = needed}) or ae2.craftItem({name = itemID, count = needed}) end)
                                 else
                                     table.insert(tempRequests, {text = linePrefix .. "✖ VOID", color = C_FAIL})
                                 end
@@ -312,6 +333,7 @@ local function networkWorker()
                 
                 currentRequests = tempRequests
                 
+                -- Animate loading ticks smoothly
                 local totalSleep = REFRESH_RATE
                 local increments = 25
                 local stepTime = totalSleep / increments
