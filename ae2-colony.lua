@@ -1,11 +1,17 @@
 -- ATM10 MineColonies to AE2 Bridge Dashboard (Neon Tech Variant)
 -- Optimized for 5x3 Monitor with a Futuristic Dark Base Aesthetic
+-- Engineered with Async Parallel Pipelines to Prevent Java Deadlocks
 
 -- ====== CONFIGURATION ======
 local MONITOR_SIDE = "top"         
 local EXPORT_DIRECTION = "front"   
 local REFRESH_RATE = 5             
 -- ===========================
+
+-- Shared thread communication states
+local hasActiveErrors = false
+local isPolling = false
+local currentRequests = {}
 
 -- Diagnostics log array
 local debugLogs = {}
@@ -44,10 +50,7 @@ local C_WARN    = colors.orange      -- Quantum Amber (Partial/Pending)
 local C_FAIL    = colors.red         -- Critical Red (Missing/Offline)
 -- ==========================================
 
--- Track error status to dynamically adjust the layout space
-local hasActiveErrors = false
-
-local function drawHeader(colony, ae2, isPolling)
+local function drawHeader(colonyPresent, ae2Present)
     monitor.setBackgroundColor(C_BG)
     monitor.clear()
     
@@ -62,7 +65,7 @@ local function drawHeader(colony, ae2, isPolling)
     monitor.setCursorPos(padding + 1, 1)
     monitor.write(title)
     
-    -- Glowing network query indicator
+    -- Glowing network query indicator (pulled from async state)
     if isPolling then
         monitor.setTextColor(colors.magenta)
         monitor.setCursorPos(w - 3, 1)
@@ -74,7 +77,7 @@ local function drawHeader(colony, ae2, isPolling)
     monitor.setCursorPos(2, 3)
     monitor.setTextColor(C_TEXT)
     monitor.write("» COLONY INTEGRATOR (LEFT): ")
-    if colony then
+    if colonyPresent then
         monitor.setTextColor(C_SUCCESS)
         monitor.write("[SECURE]")
     else
@@ -85,7 +88,7 @@ local function drawHeader(colony, ae2, isPolling)
     monitor.setCursorPos(2, 4)
     monitor.setTextColor(C_TEXT)
     monitor.write("» ME NETWORK BRIDGE (RIGHT): ")
-    if ae2 then
+    if ae2Present then
         monitor.setTextColor(C_SUCCESS)
         monitor.write("[ONLINE]")
     else
@@ -145,123 +148,133 @@ local function drawDebugPanel()
     end
 end
 
-local function processRequests(colony, ae2)
-    if not colony or not ae2 then return end
-    
-    local success, requests = pcall(colony.getRequests)
-    if not success or not requests then 
-        error("Matrix pipeline failure querying Colony Integrator.") 
-    end
-    
-    local y = 9
-    local hasPanel = hasActiveErrors or (#deliveryHistory > 0)
-    local maxDisplayY = hasPanel and (h - 7) or (h - 1)
-    
-    if #requests == 0 then
-        monitor.setCursorPos(2, y)
-        monitor.setTextColor(C_SUCCESS)
-        monitor.write("✔ Network Idle: All sector demands met.")
-        return
-    end
-    
-    for _, req in ipairs(requests) do
-        -- Explicit tick-yield inside loops to stop ATM10 thread crashes
-        sleep(0)
+-- ==========================================
+-- THREAD 1: THE RENDERING ENGINE
+-- ==========================================
+local function renderLoop()
+    while true do
+        -- Check peripherals on the render side safely without blocking execution
+        local colonyPresent = peripheral.find("colony_integrator") ~= nil
+        local ae2Present = peripheral.find("me_bridge") ~= nil
         
-        if y > maxDisplayY then 
+        -- Draw main chassis
+        drawHeader(colonyPresent, ae2Present)
+        
+        -- Render Active Requests Cached by Thread 2
+        local y = 9
+        local hasPanel = hasActiveErrors or (#deliveryHistory > 0)
+        local maxDisplayY = hasPanel and (h - 7) or (h - 1)
+        
+        if #currentRequests == 0 and not hasActiveErrors then
             monitor.setCursorPos(2, y)
-            monitor.setTextColor(C_WARN)
-            monitor.write("... Buffer Overflow: Output Truncated ...")
-            break 
-        end
-        
-        local itemID = req.item or "void:null"
-        local needed = tonumber(req.needed) or 0
-        local displayName = req.name or itemID
-        
-        displayName = displayName:gsub("minecraft:", ""):gsub("domum_ornamentum:", "")
-        displayName = displayName:gsub("^%l", string.upper):gsub("_", " ")
-        if #displayName > 22 then displayName = displayName:sub(1, 19) .. "..." end
-        
-        monitor.setCursorPos(2, y)
-        monitor.setTextColor(C_TEXT)
-        monitor.write(string.format("%-22s | %-5d | ", displayName, needed))
-        
-        local available = 0
-        local aeSuccess, aeItem = pcall(function()
-            return ae2.getItem({name = itemID})
-        end)
-        
-        if aeSuccess and aeItem then
-            available = tonumber(aeItem.amount) or tonumber(aeItem.count) or 0
-        elseif not aeSuccess then
-            monitor.setTextColor(C_WARN)
-            monitor.write("⚠ AE2 TIMEOUT")
-            y = y + 1
-            break
-        end
-        
-        if available >= needed then
             monitor.setTextColor(C_SUCCESS)
-            monitor.write("▶ ROUTING")
-            
-            local ok = pcall(function()
-                ae2.exportItem({name = itemID, count = needed}, EXPORT_DIRECTION)
-            end)
-            if ok then addDelivery(displayName, needed) end
-            
-        elseif available > 0 and available < needed then
-            monitor.setTextColor(C_WARN)
-            monitor.write("⚠ DEPLETED (" .. available .. ")")
-            
-            local ok = pcall(function()
-                ae2.exportItem({name = itemID, count = available}, EXPORT_DIRECTION)
-            end)
-            if ok then addDelivery(displayName, available) end
+            monitor.write("✔ Network Idle: All sector demands met.")
         else
-            monitor.setTextColor(C_FAIL)
-            monitor.write("✖ VOID")
+            for _, displayLine in ipairs(currentRequests) do
+                if y > maxDisplayY then
+                    monitor.setCursorPos(2, y)
+                    monitor.setTextColor(C_WARN)
+                    monitor.write("... Buffer Overflow: Output Truncated ...")
+                    break
+                end
+                
+                monitor.setCursorPos(2, y)
+                monitor.setTextColor(displayLine.color or C_TEXT)
+                monitor.write(displayLine.text)
+                y = y + 1
+            end
         end
         
-        y = y + 1
+        drawDebugPanel()
+        
+        -- Pulse animation tick rate (Runs entirely immune to mod freezes!)
+        sleep(0.5)
     end
 end
 
--- ====== SAFE INITIALIZATION AND RUNNER ======
-addLog("Logistics kernel initialized.")
-
--- Force an initial yield so ComputerCraft is settled in its loop context
-sleep(0.5)
-
-while true do
-    local colony = nil
-    local ae2 = nil
-    
-    -- Wrap peripheral parsing safely to avoid thread locks
-    pcall(function() colony = peripheral.find("colony_integrator") end)
-    pcall(function() ae2 = peripheral.find("me_bridge") end)
-    
-    hasActiveErrors = false
-    
-    if not colony or not ae2 then
-        hasActiveErrors = true
-        if not colony then addLog("Hardware Fault: Colony node handshake failed.") end
-        if not ae2 then addLog("Hardware Fault: ME system grid parity lost.") end
-    else
-        local coreSuccess, coreError = pcall(processRequests, colony, ae2)
-        if not coreSuccess then
+-- ==========================================
+-- THREAD 2: THE PERIPHERAL INTEGRATOR
+-- ==========================================
+local function networkWorker()
+    while true do
+        local colony = peripheral.find("colony_integrator")
+        local ae2 = peripheral.find("me_bridge")
+        
+        if not colony or not ae2 then
             hasActiveErrors = true
-            addLog("Core Error: " .. tostring(coreError):sub(1, 25))
-        end
-    end
-    
-    drawHeader(colony, ae2, true)
-    drawDebugPanel()
-    
-    sleep(0.5)
-    
-    drawHeader(colony, ae2, false)
-    drawDebugPanel()
-    
-    sleep(REFRESH_RATE - 0.5)
+            currentRequests = {}
+            if not colony then addLog("Hardware Fault: Colony node handshake failed.") end
+            if not ae2 then addLog("Hardware Fault: ME system grid parity lost.") end
+            sleep(REFRESH_RATE)
+        else
+            isPolling = true
+            local success, requests = pcall(colony.getRequests)
+            isPolling = false
+            
+            if not success or not requests then
+                hasActiveErrors = true
+                addLog("Core Error: Colony Integrator pipeline crash.")
+                currentRequests = {}
+                sleep(REFRESH_RATE)
+            else
+                hasActiveErrors = false
+                local tempRequests = {}
+                
+                for _, req in ipairs(requests) do
+                    -- Instantly yields back to game tick to let deadlocks unload
+                    sleep(0)
+                    
+                    local itemID = req.item or "void:null"
+                    local needed = tonumber(req.needed) or 0
+                    local displayName = req.name or itemID
+                    
+                    displayName = displayName:gsub("minecraft:", ""):gsub("domum_ornamentum:", "")
+                    displayName = displayName:gsub("^%l", string.upper):gsub("_", " ")
+                    if #displayName > 22 then displayName = displayName:sub(1, 19) .. "..." end
+                    
+                    local linePrefix = string.format("%-22s | %-5d | ", displayName, needed)
+                    
+                    local available = 0
+                    local aeSuccess, aeItem = pcall(function()
+                        return ae2.getItem({name = itemID})
+                    end)
+                    
+                    if aeSuccess and aeItem then
+                        available = tonumber(aeItem.amount) or tonumber(aeItem.count) or 0
+                    end
+                    
+                    if available >= needed then
+                        table.insert(tempRequests, {text = linePrefix .. "▶ ROUTING", color = C_TEXT})
+                        
+                        local ok = pcall(function()
+                            ae2.exportItem({name = itemID, count = needed}, EXPORT_DIRECTION)
+                        end)
+                        if ok then addDelivery(displayName, needed) end
+                        
+                    elseif available > 0 and available < needed then
+                        table.insert(tempRequests, {text = linePrefix .. "⚠ DEPLETED (" .. available .. ")", color = C_TEXT})
+                        
+                        local ok = pcall(function()
+                            ae2.exportItem({name = itemID, count = available}, EXPORT_DIRECTION)
+                        end)
+                        if ok then addDelivery(displayName, available) end
+                    else
+                        table.insert(tempRequests, {text = linePrefix .. "✖ VOID", color = C_FAIL})
 end
+end
+-- Update layout cache thread-safely
+currentRequests = tempRequests
+sleep(REFRESH_RATE)
+end
+end
+end
+end
+-- ====== CONCURRENCY EXECUTIVE KERNEL ======
+addLog("Logistics kernel initialized.")
+term.clear()
+print("========================================")
+print("  AE2 LOGISTICS ASYNC MATRIX INITIALIZED")
+print("========================================")
+print("Monitoring thread activity status...")
+-- Launch both loops instantly in parallel. If one blocks, the other ticks.
+parallel.waitForAny(renderLoop, networkWorker)
