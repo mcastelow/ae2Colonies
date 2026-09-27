@@ -109,7 +109,6 @@ local function drawHeader()
 end
 
 local function drawDebugPanel()
-    -- HIDES ENTIRELY WHEN WORKING PROPERLY: Only active during an error flag state
     if hasActiveErrors then
         local startY = h - 4
         monitor.setCursorPos(1, startY)
@@ -151,7 +150,6 @@ end
 -- ==========================================
 local function renderLoop()
     while true do
-        -- CRITICAL DECOUPLING: Removed all peripheral.find calls here to stop hardware race conditions
         drawHeader()
         
         local y = 9
@@ -184,7 +182,7 @@ local function renderLoop()
 end
 
 -- ==========================================
--- THREAD 2: PERIPHERAL INTEGRATOR (DEEP SCHEMAS UNPACKED)
+-- THREAD 2: PERIPHERAL INTEGRATOR (ROBUST SCHEMAS UNPACKED)
 -- ==========================================
 local function networkWorker()
     term.clear()
@@ -221,22 +219,25 @@ local function networkWorker()
                     sleep(0.02)
                     
                     local extractedItems = {}
+                    -- FIXED LAYOUT SCANNER: Avoid using the '#' operator on arbitrary table objects
                     if req.items and type(req.items) == "table" then
-                        if #req.items > 0 then
-                            for _, subItem in ipairs(req.items) do
+                        local elementsFound = false
+                        for _, subItem in pairs(req.items) do
+                            if type(subItem) == "table" then
                                 table.insert(extractedItems, subItem)
+                                elementsFound = true
                             end
-                        else
-                            table.insert(extractedItems, req.items)
                         end
+                        if not elementsFound then table.insert(extractedItems, req.items) end
                     elseif type(req.item) == "table" then
-                        if #req.item > 0 then
-                            for _, subItem in ipairs(req.item) do
+                        local elementsFound = false
+                        for _, subItem in pairs(req.item) do
+                            if type(subItem) == "table" then
                                 table.insert(extractedItems, subItem)
+                                elementsFound = true
                             end
-                        else
-                            table.insert(extractedItems, req.item)
                         end
+                        if not elementsFound then table.insert(extractedItems, req.item) end
                     else
                         table.insert(extractedItems, req)
                     end
