@@ -1,6 +1,6 @@
 -- ATM10 MineColonies to AE2 Bridge Dashboard (Neon Tech Variant)
 -- Optimized for 5x3 Monitor with a Futuristic Dark Base Aesthetic
--- Block 1 of 3: System Variables and Configuration Vectors
+-- Engineered with Dynamic Progress Loading Telemetry & Deadlock Guards
 
 -- ====== CONFIGURATION ======
 local MONITOR_SIDE = "top"         
@@ -14,6 +14,9 @@ local isPolling = false
 local colonyConnected = false
 local ae2Connected = false
 local currentRequests = {}
+
+-- Dynamic Progress Telemetry State
+local currentTickProgress = 0
 
 -- Diagnostics log array
 local debugLogs = {}
@@ -51,8 +54,6 @@ local C_SUCCESS = colors.lime        -- Plasma Green (Active/Fulfilling)
 local C_WARN    = colors.orange      -- Quantum Amber (Partial/Pending)
 local C_FAIL    = colors.red         -- Critical Red (Missing/Offline)
 -- ==========================================
--- Block 2 of 3: User Interface Rendering Engine
-
 local function drawHeader()
     monitor.setBackgroundColor(C_BG)
     monitor.clear()
@@ -67,11 +68,20 @@ local function drawHeader()
     monitor.setCursorPos(padding + 1, 1)
     monitor.write(title)
     
+    -- SYSTEM MONITOR PROGRESS TELEMETRY BAR [====    ]
+    local barWidth = 8
+    local progressChars = math.floor((currentTickProgress / 100) * barWidth)
+    if progressChars > barWidth then progressChars = barWidth end
+    
+    local barText = "[" .. string.rep("=", progressChars) .. string.rep(" ", barWidth - progressChars) .. "]"
+    monitor.setCursorPos(w - (barWidth + 2), 1)
+    
     if isPolling then
-        monitor.setTextColor(colors.magenta)
-        monitor.setCursorPos(w - 5, 1)
-        monitor.write("[::]")
+        monitor.setTextColor(C_SUB) -- Purple during active API call
+    else
+        monitor.setTextColor(C_SUCCESS) -- Green during cycle loading count
     end
+    monitor.write(barText)
     
     monitor.setBackgroundColor(C_BG)
     monitor.setCursorPos(2, 3)
@@ -173,11 +183,9 @@ local function renderLoop()
             end
         end
         drawDebugPanel()
-        sleep(0.5)
+        sleep(0.2) -- Faster draw loop updates to make progress bar perfectly smooth
     end
 end
--- Block 3 of 3: Core Extraction Routines and Flat Argument Dispatchers
-
 local function networkWorker()
     term.clear()
     while true do
@@ -191,9 +199,11 @@ local function networkWorker()
         if not colony or not ae2 then
             hasActiveErrors = true
             currentRequests = {}
+            currentTickProgress = 0
             sleep(REFRESH_RATE)
         else
             isPolling = true
+            currentTickProgress = 100 -- Max progress bar during query hit
             local success, requests = pcall(colony.getRequests)
             isPolling = false
             
@@ -204,109 +214,99 @@ local function networkWorker()
             else
                 hasActiveErrors = false
                 local tempRequests = {}
-                print(":: Polled Network: " .. #requests .. " groups at " .. os.date("%H:%M:%S"))
+                print(":: Polled Network: " .. #requests .. " item frames at " .. os.date("%H:%M:%S"))
                 
                 for _, req in ipairs(requests) do
                     sleep(0.01)
                     
-                    local extractedItems = {}
-                    if req.items and type(req.items) == "table" then
-                        for _, subItem in pairs(req.items) do
-                            if type(subItem) == "table" then table.insert(extractedItems, subItem) end
-                        end
-                        if #extractedItems == 0 then table.insert(extractedItems, req.items) end
+                    -- FLATTENED PROPERTY UNWRAPPER: Standardised object field mapping loops
+                    local itemID = "void:null"
+                    local displayName = "Unknown Block"
+                    local needed = 0
+                    
+                    if type(req.items) == "table" and req.items[1] then
+                        itemID = req.items[1].name or req.items[1].id or "void:null"
+                        displayName = req.items[1].displayName or req.items[1].name or displayName
+                        needed = tonumber(req.items[1].count) or tonumber(req.items[1].needed) or 0
+                    elseif type(req.items) == "table" then
+                        itemID = req.items.name or req.items.id or "void:null"
+                        displayName = req.items.displayName or req.items.name or displayName
+                        needed = tonumber(req.items.count) or tonumber(req.items.needed) or 0
                     elseif type(req.item) == "table" then
-                        for _, subItem in pairs(req.item) do
-                            if type(subItem) == "table" then table.insert(extractedItems, subItem) end
-                        end
-                        if #extractedItems == 0 then table.insert(extractedItems, req.item) end
-                    else
-                        table.insert(extractedItems, req)
+                        itemID = req.item.name or req.item.id or "void:null"
+                        displayName = req.item.displayName or req.item.name or displayName
+                        needed = tonumber(req.item.count) or tonumber(req.item.needed) or 0
+                    elseif type(req.item) == "string" then
+                        itemID = req.item
+                        displayName = req.name or itemID
                     end
                     
-                    for _, activeItem in ipairs(extractedItems) do
-                        local itemID = "void:null"
-                        local displayName = "Unknown Block"
-                        local needed = 0
+                    if needed == 0 then
+                        needed = tonumber(req.count) or tonumber(req.needed) or tonumber(req.amount) or 0
+                    end
+                    
+                    if itemID ~= "void:null" and needed > 0 then
+                        if not string.find(itemID, ":") then itemID = "minecraft:" .. itemID end
+                        displayName = displayName:gsub("minecraft:", ""):gsub("domum_ornamentum:", "")
+                        displayName = displayName:gsub("^%l", string.upper):gsub("_", " ")
+                        if #displayName > 22 then displayName = displayName:sub(1, 19) .. "..." end
                         
-                        if type(activeItem) == "table" then
-                            itemID = activeItem.name or activeItem.id or (activeItem.item and activeItem.item.name) or "void:null"
-                            displayName = activeItem.displayName or activeItem.name or itemID
-                            needed = tonumber(activeItem.count) or tonumber(activeItem.needed) or tonumber(activeItem.amount) or 0
-                            if (needed == 0 or needed == 1) and activeItem.item and type(activeItem.item) == "table" then
-                                needed = tonumber(activeItem.item.count) or tonumber(activeItem.item.needed) or tonumber(activeItem.item.amount) or needed
+                        local linePrefix = string.format("%-22s | %-5d | ", displayName, needed)
+                        local available = 0
+                        local craftable = false
+                        
+                        -- ISOLATED SINGLE-ITEM API TELEMETRY CHECKS
+                        local checkSuccess, checkItem = pcall(function() return ae2.getItem({name = itemID}) end)
+                        if checkSuccess and checkItem then
+                            available = tonumber(checkItem.amount) or tonumber(checkItem.count) or 0
+                            craftable = checkItem.isCraftable or false
+                        else
+                            local altSuccess, altItem = pcall(function() return ae2.getItem(itemID) end)
+                            if altSuccess and altItem then
+                                available = tonumber(altItem.amount) or tonumber(altItem.count) or 0
+                                craftable = altItem.isCraftable or false
                             end
-                        elseif type(activeItem) == "string" then
-                            itemID = activeItem
-                            displayName = itemID
                         end
                         
-                        if needed == 0 then
-                            needed = tonumber(req.count) or tonumber(req.needed) or tonumber(req.amount) or 0
-                        end
-                        
-                        if itemID ~= "void:null" and needed > 0 then
-                            if not string.find(itemID, ":") then itemID = "minecraft:" .. itemID end
-                            displayName = displayName:gsub("minecraft:", ""):gsub("domum_ornamentum:", "")
-                            displayName = displayName:gsub("^%l", string.upper):gsub("_", " ")
-                            if #displayName > 22 then displayName = displayName:sub(1, 19) .. "..." end
-                            
-                            local linePrefix = string.format("%-22s | %-5d | ", displayName, needed)
-                            local available = 0
-                            local craftable = false
-                            
-                            -- MODERN 1.21 OBJECT LOOKUP UNWRAPPER
-                            local checkSuccess, checkItem = pcall(function() return ae2.getItem({item = itemID}) end)
-                            if checkSuccess and checkItem then
-                                available = tonumber(checkItem.amount) or tonumber(checkItem.count) or 0
-                                craftable = checkItem.isCraftable or false
-                            else
-                                local altSuccess, altItem = pcall(function() return ae2.getItem(itemID) end)
-                                if altSuccess and altItem then
-                                    available = tonumber(altItem.amount) or tonumber(altItem.count) or 0
-                                    craftable = altItem.isCraftable or false
+                        if available >= needed then
+                            table.insert(tempRequests, {text = linePrefix .. "▶ ROUTING", color = C_SUCCESS})
+                            local ok = pcall(function() return ae2.exportItem(itemID, needed, EXPORT_DIRECTION) end)
+                            if not ok then pcall(function() return ae2.exportItem({name = itemID, count = needed}, EXPORT_DIRECTION) end) end
+                            if ok then addDelivery(displayName, needed) end
+                        elseif available > 0 and available < needed then
+                            table.insert(tempRequests, {text = linePrefix .. "⚠ DEPLETED", color = C_WARN})
+                            local ok = pcall(function() return ae2.exportItem(itemID, available, EXPORT_DIRECTION) end)
+                            if not ok then pcall(function() return ae2.exportItem({name = itemID, count = available}, EXPORT_DIRECTION) end) end
+                            if ok then 
+                                addDelivery(displayName, available)
+                                if craftable then 
+                                    local craftShortage = needed - available
+                                    pcall(function() return ae2.craftItem(itemID, craftShortage) end) 
+                                    pcall(function() return ae2.craftItem({item = itemID, count = craftShortage}) end)
                                 end
                             end
-                            
-                            if available >= needed then
-                                table.insert(tempRequests, {text = linePrefix .. "▶ ROUTING", color = C_SUCCESS})
-                                
-                                -- 1.21 HYPER-STABLE DUAL EXECUTION PROBE
-                                local ok = pcall(function() return ae2.exportItem(itemID, needed, EXPORT_DIRECTION) end)
-                                if not ok then
-                                    ok = pcall(function() return ae2.exportItem({item = itemID, count = needed}, EXPORT_DIRECTION) end)
-                                end
-                                if ok then addDelivery(displayName, needed) end
-                                
-                            elseif available > 0 and available < needed then
-                                table.insert(tempRequests, {text = linePrefix .. "⚠ DEPLETED", color = C_WARN})
-                                
-                                local ok = pcall(function() return ae2.exportItem(itemID, available, EXPORT_DIRECTION) end)
-                                if not ok then
-                                    ok = pcall(function() return ae2.exportItem({item = itemID, count = available}, EXPORT_DIRECTION) end)
-                                end
-                                if ok then 
-                                    addDelivery(displayName, available)
-                                    if craftable then 
-                                        local craftShortage = needed - available
-                                        pcall(function() return ae2.craftItem(itemID, craftShortage) end) 
-                                        pcall(function() return ae2.craftItem({item = itemID, count = craftShortage}) end)
-                                    end
-                                end
+                        else
+                            if craftable then
+                                table.insert(tempRequests, {text = linePrefix .. "⚒ QUEUED", color = C_SUB})
+                                pcall(function() return ae2.craftItem(itemID, needed) end)
+                                pcall(function() return ae2.craftItem({item = itemID, count = needed}) end)
                             else
-                                if craftable then
-                                    table.insert(tempRequests, {text = linePrefix .. "⚒ QUEUED", color = C_SUB})
-                                    pcall(function() return ae2.craftItem(itemID, needed) end)
-                                    pcall(function() return ae2.craftItem({item = itemID, count = needed}) end)
-                                else
-                                    table.insert(tempRequests, {text = linePrefix .. "✖ VOID", color = C_FAIL})
-                                end
+                                table.insert(tempRequests, {text = linePrefix .. "✖ VOID", color = C_FAIL})
                             end
                         end
                     end
                 end
                 currentRequests = tempRequests
-                sleep(REFRESH_RATE)
+                
+                -- TICK TIMER SIMULATION SYSTEM (Progress bar ticks down smoothly over 5 seconds)
+                local totalSleep = REFRESH_RATE
+                local increments = 25
+                local stepTime = totalSleep / increments
+                
+                for i = increments, 0, -1 do
+                    currentTickProgress = math.floor((i / increments) * 100)
+                    sleep(stepTime)
+                end
             end
         end
     end
