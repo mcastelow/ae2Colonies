@@ -1,6 +1,6 @@
 -- ATM10 MineColonies to AE2 Bridge Dashboard (Neon Tech Variant)
 -- Optimized for 5x3 Monitor with a Futuristic Dark Base Aesthetic
--- Engineered with Async Parallel Pipelines & AE2 Auto-Crafting Engines
+-- DEBUG RUNNER EDITION: Outputs raw API tables to the Computer Terminal
 
 -- ====== CONFIGURATION ======
 local MONITOR_SIDE = "top"         
@@ -183,7 +183,7 @@ local function renderLoop()
 end
 
 -- ==========================================
--- THREAD 2: THE PERIPHERAL INTEGRATOR (1.21.1 COMPATIBLE VALUE KEYS)
+-- THREAD 2: PERIPHERAL INTEGRATOR + TERMINAL LOGGER
 -- ==========================================
 local function networkWorker()
     while true do
@@ -193,8 +193,6 @@ local function networkWorker()
         if not colony or not ae2 then
             hasActiveErrors = true
             currentRequests = {}
-            if not colony then addLog("Hardware Fault: Colony node handshake failed.") end
-            if not ae2 then addLog("Hardware Fault: ME system grid parity lost.") end
             sleep(REFRESH_RATE)
         else
             isPolling = true
@@ -203,14 +201,18 @@ local function networkWorker()
             
             if not success or not requests then
                 hasActiveErrors = true
-                addLog("Core Error: Colony Integrator pipeline crash.")
                 currentRequests = {}
                 sleep(REFRESH_RATE)
             else
                 hasActiveErrors = false
                 local tempRequests = {}
                 
-                -- Cache system items and map using modern 1.21.1 '.count' key fields
+                -- Clear terminal screen to show readable real-time loop telemetry
+                term.clear()
+                term.setCursorPos(1,1)
+                print("=== LIVE DIAGNOSTIC TRACE ===")
+                
+                -- Parse and cache system list items
                 local systemItems = {}
                 local listSuccess, allItems = pcall(ae2.listItems)
                 if listSuccess and allItems then
@@ -241,23 +243,37 @@ local function networkWorker()
                             itemID = "minecraft:" .. itemID
                         end
                         
+                        -- PRINT TELEMETRY DATA TO THE COMPUTER CASING TERMINAL
+                        print("\n[MC ID]: " .. tostring(itemID))
+                        print(" -> Needed Qty: " .. tostring(needed))
+                        
                         displayName = displayName:gsub("minecraft:", ""):gsub("domum_ornamentum:", "")
                         displayName = displayName:gsub("^%l", string.upper):gsub("_", " ")
                         if #displayName > 22 then displayName = displayName:sub(1, 19) .. "..." end
                         
                         local linePrefix = string.format("%-22s | %-5d | ", displayName, needed)
                         
-                        -- CRITICAL FIX: Extract amount using the modern '.count' payload signature
                         local aeItem = systemItems[itemID]
                         local available = 0
                         local craftable = false
                         
                         if aeItem then
+                            print(" -> AE Cache Match: TRUE")
+                            -- Print out all fields inside the item payload to see exact key names
+                            local keyList = ""
+                            for k, v in pairs(aeItem) do
+                                keyList = keyList .. k .. "=" .. tostring(v) .. " "
+                            end
+                            print(" -> Keys found: " .. keyList)
+                            
                             available = tonumber(aeItem.count) or tonumber(aeItem.amount) or 0
                             craftable = aeItem.isCraftable or false
                         else
+                            print(" -> AE Cache Match: FALSE (Item missing in listItems)")
+                            -- Fallback table query logging
                             local checkSuccess, checkItem = pcall(function() return ae2.getItem({name = itemID}) end)
                             if checkSuccess and checkItem then
+                                print(" -> Fallback getItem Match: TRUE")
                                 available = tonumber(checkItem.count) or tonumber(checkItem.amount) or 0
                                 craftable = checkItem.isCraftable or false
                             end
@@ -265,37 +281,17 @@ local function networkWorker()
                         
                         if available >= needed then
                             table.insert(tempRequests, {text = linePrefix .. "▶ ROUTING", color = C_SUCCESS})
-                            local ok = pcall(function()
-                                return ae2.exportItem({name = itemID, count = needed}, EXPORT_DIRECTION)
-                            end)
-                            if ok then addDelivery(displayName, needed) end
-                            
+                            pcall(function() ae2.exportItem({name = itemID, count = needed}, EXPORT_DIRECTION) end)
                         elseif available > 0 and available < needed then
                             table.insert(tempRequests, {text = linePrefix .. "⚠ DEPLETED (" .. available .. ")", color = C_WARN})
-                            local ok = pcall(function()
-                                return ae2.exportItem({name = itemID, count = available}, EXPORT_DIRECTION)
-                            end)
-                            if ok then addDelivery(displayName, available) end
-                            
-                            if craftable then
-                                pcall(function() ae2.craftItem({name = itemID, count = (needed - available)}) end)
-                            end
+                            pcall(function() ae2.exportItem({name = itemID, count = available}, EXPORT_DIRECTION) end)
+                            if craftable then pcall(function() ae2.craftItem({name = itemID, count = (needed - available)}) end) end
                         else
                             if craftable then
                                 table.insert(tempRequests, {text = linePrefix .. "⚒ QUEUED", color = C_SUB})
                                 pcall(function() ae2.craftItem({name = itemID, count = needed}) end)
                             else
-                                local bruteForceExported = 0
-                                pcall(function()
-                                    bruteForceExported = ae2.exportItem({name = itemID, count = needed}, EXPORT_DIRECTION) or 0
-                                end)
-                                
-                                if type(bruteForceExported) == "number" and bruteForceExported > 0 then
-                                    table.insert(tempRequests, {text = linePrefix .. "▶ ROUTING", color = C_SUCCESS})
-                                    addDelivery(displayName, bruteForceExported)
-                                else
-                                    table.insert(tempRequests, {text = linePrefix .. "✖ VOID", color = C_FAIL})
-                                end
+                                table.insert(tempRequests, {text = linePrefix .. "✖ VOID", color = C_FAIL})
                             end
                         end
                     end
@@ -310,10 +306,4 @@ end
 
 -- ====== CONCURRENCY EXECUTIVE KERNEL ======
 addLog("Logistics kernel initialized.")
-term.clear()
-print("========================================")
-print("  AE2 LOGISTICS ASYNC MATRIX INITIALIZED")
-print("========================================")
-print("Monitoring thread activity status...")
-
 parallel.waitForAny(renderLoop, networkWorker)
