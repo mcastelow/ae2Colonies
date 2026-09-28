@@ -1,5 +1,5 @@
 -- ATM10 MineColonies to AE2 Bridge Supply Engine
--- Production Core (ATM10 v8.1 / MC 1.21.1 / Extended Balanced Monitor Layout)
+-- Production Core (ATM10 v8.1 / MC 1.21.1 / Cyber-Grid Industrial Matrix Edition)
 
 -- ====== CONFIGURATION ======
 local EXPORT_CONTAINER = "sophisticatedstorage:barrel_0"   
@@ -21,7 +21,6 @@ local function extractItemString(itemObj)
     return nil
 end
 
--- Pads or truncates text to an exact length
 local function padRight(text, length)
     text = tostring(text)
     if #text >= length then
@@ -30,7 +29,6 @@ local function padRight(text, length)
     return text .. string.rep(" ", length - #text)
 end
 
--- Safely calculates active vs total crafting CPUs from AE2
 local function getCpuMetrics(ae2)
     if not ae2 or not ae2.getCraftingCPUs then return "0/0" end
     local success, cpus = pcall(ae2.getCraftingCPUs)
@@ -54,76 +52,93 @@ local function renderDashboard(statusLines)
 
     local cpuUsage = getCpuMetrics(ae2)
 
-    -- 1. Standard Computer Terminal Fallback Printing
+    -- 1. Console Fallback
     term.clear()
     term.setCursorPos(1,1)
-    print("=== LOGISTICS HUB ===")
+    print("=== LOGISTICS RADAR OPERATIONAL ===")
     for _, line in ipairs(statusLines) do print(line.text) end
 
-    -- 2. Advanced Multi-Block Monitor Layout
+    -- 2. Futuristic Monitor System Overlay
     if mon then
         mon.setTextScale(1.0) 
         mon.clear()
-        local w, h = mon.getSize() -- w is exactly 36 on a standard 5x3 at scale 1
+        local w, h = mon.getSize() -- Exactly 36 characters wide
         
-        -- Row 1: Centered Cyberpunk Header Ribbon
-        mon.setBackgroundColor(colors.gray)
-        mon.setTextColor(colors.white)
-        mon.setCursorPos(1, 1)
-        mon.clearLine()
-        
-        local pulse = tickState and "*" or " "
-        tickState = not tickState
-        local headerText = "LOGISTICS MATRIX [" .. pulse .. "] " .. os.date("%H:%M:%S")
-        local headerPad = math.max(1, math.floor((w - #headerText) / 2))
-        mon.setCursorPos(headerPad, 1)
-        mon.write(headerText)
-        
-        -- Reset background for information rows
+        -- Row 1: Structural Upper Frame Bracket
         mon.setBackgroundColor(colors.black)
+        mon.setTextColor(colors.gray)
+        mon.setCursorPos(1, 1)
         
-        -- Row 2: Centered Infrastructure Node Ticker
-        local netText = string.format("NET: AP[%s] ME[%s] OUT[%s]", colony and "ON" or "OFF", ae2 and "ON" or "OFF", barrel and "ON" or "OFF")
-        local netPad = math.max(1, math.floor((w - #netText) / 2))
+        local pulse = tickState and "o" or " "
+        tickState = not tickState
+        local headerText = "─── SYS MATRIX [" .. pulse .. "] ───"
+        local headerPad = math.max(1, math.floor((w - #headerText) / 2))
+        mon.write(string.rep("┌", headerPad - 1) .. headerText .. string.rep("┐", w - (headerPad + #headerText) + 1))
         
-        mon.setCursorPos(netPad, 2)
+        -- Row 2: Balanced Live LED Grid Layout
+        -- Flashing status nodes look like real hardware component panels
+        mon.setCursorPos(1, 2)
+        mon.setTextColor(colors.gray)
+        mon.write("│ ")
+        
         mon.setTextColor(colors.lightGray)
-        mon.write("NET: ")
+        mon.write("AP")
         mon.setTextColor(colony and colors.lime or colors.red)
-        mon.write("AP[" .. (colony and "ON" or "OFF") .. "] ")
-        mon.setTextColor(ae2 and colors.lime or colors.red)
-        mon.write("ME[" .. (ae2 and "ON" or "OFF") .. "] ")
-        mon.setTextColor(barrel and colors.lime or colors.red)
-        mon.write("OUT[" .. (barrel and "ON" or "OFF") .. "]")
-
-        -- Row 3: Centered Active Computing Load Metrics
-        local cpuText = "AE2 COMPUTE: CPU[" .. cpuUsage .. "]"
-        local cpuPad = math.max(1, math.floor((w - #cpuText) / 2))
-        mon.setCursorPos(cpuPad, 3)
-        mon.setTextColor(colors.lightGray)
-        mon.write("AE2 COMPUTE: ")
-        mon.setTextColor(cpuUsage:sub(1,1) == "0" and colors.cyan or colors.magenta)
-        mon.write("CPU[" .. cpuUsage .. "]")
-
-        -- Row 5: Widened Balanced Table Header Strip (Takes exactly 36 characters)
-        -- ITEM: 16 chars | QTY: 4 chars | STATUS: 8 chars (+ spacing and boundaries = 36)
-        mon.setCursorPos(1, 5)
-        mon.setTextColor(colors.yellow)
-        mon.write("| ITEM             | QTY  | STATUS   |")
+        mon.write("[o] ")
         
-        -- Rows 6+: Full-Width Page Scrolling Windows
+        mon.setTextColor(colors.lightGray)
+        mon.write("ME")
+        mon.setTextColor(ae2 and colors.lime or colors.red)
+        mon.write("[o] ")
+        
+        mon.setTextColor(colors.lightGray)
+        mon.write("OUT")
+        mon.setTextColor(barrel and colors.lime or colors.red)
+        mon.write("[o]  ")
+        
+        mon.setTextColor(colors.lightGray)
+        mon.write("CPU:[")
+        mon.setTextColor(cpuUsage:sub(1,1) == "0" and colors.cyan or colors.magenta)
+        mon.write(cpuUsage)
+        mon.setTextColor(colors.lightGray)
+        mon.write("]")
+        
+        mon.setCursorPos(w, 2)
+        mon.setTextColor(colors.gray)
+        mon.write("│")
+
+        -- Row 3 & 4: Heavy Double Frame Dividers & Table Headers
+        mon.setCursorPos(1, 3)
+        mon.setTextColor(colors.gray)
+        mon.write("╞══════════════════════════════════╡")
+        
+        mon.setCursorPos(1, 4)
+        mon.setTextColor(colors.cyan)
+        mon.write("│ ITEM             │ QTY  │ STATE  │")
+        
+        mon.setCursorPos(1, 5)
+        mon.setTextColor(colors.gray)
+        mon.write("├──────────────────────────────────┤")
+        
+        -- Rows 6+: Dynamic Scrolling Data Stream 
         local currentLine = 6
         if #statusLines == 0 then
             mon.setCursorPos(1, currentLine)
-            mon.setTextColor(colors.lightBlue)
-            -- Perfectly aligned blank filler line across the 36 char frame
-            mon.write("| [All Demands Cleared]            |")
+            mon.setTextColor(colors.blue)
+            mon.write("│ · MATRIX IDLE: STREAM STABLE    │")
+            
+            -- Fill subsequent space with empty structural walls
+            for r = currentLine + 1, h - 1 do
+                mon.setCursorPos(1, r)
+                mon.setTextColor(colors.gray)
+                mon.write("│                                  │")
+            end
         else
             if scrollIndex > #statusLines then scrollIndex = 1 end
             
             local renderedCount = 0
             for i = scrollIndex, #statusLines do
-                if currentLine > h or renderedCount >= SCROLL_LINES_PER_PAGE then break end
+                if currentLine >= h or renderedCount >= SCROLL_LINES_PER_PAGE then break end
                 
                 local line = statusLines[i]
                 mon.setCursorPos(1, currentLine)
@@ -134,12 +149,24 @@ local function renderDashboard(statusLines)
                 renderedCount = renderedCount + 1
             end
             
+            -- Fill any vacant row spaces if short on data lines
+            for r = currentLine, h - 1 do
+                mon.setCursorPos(1, r)
+                mon.setTextColor(colors.gray)
+                mon.write("│                                  │")
+            end
+            
             if #statusLines > SCROLL_LINES_PER_PAGE then
                 scrollIndex = scrollIndex + SCROLL_LINES_PER_PAGE
             else
                 scrollIndex = 1
             end
         end
+        
+        -- Final Row: Lower Closure Frame Bracket
+        mon.setCursorPos(1, h)
+        mon.setTextColor(colors.gray)
+        mon.write("└" .. string.rep("─", w - 2) .. "┘")
     end
 end
 
@@ -182,11 +209,11 @@ local function processDemands()
         local available = detail and (detail.count or detail.amount) or 0
         local isCraftable = detail and detail.isCraftable or false
 
-        -- Stretch item description column to 16 characters wide to match the new grid boundaries
+        -- Balanced text truncation for industrial layout frame slots
         local colItem = padRight(cleanName, 16)
 
         if available >= totalNeeded then
-            -- ROUTING STATE (Plasma Green)
+            -- ROUTING (Plasma Green)
             local itemTable = { name = itemID, count = totalNeeded }
             local callSuccess, res = pcall(ae2.exportItem, itemTable, EXPORT_CONTAINER)
             if not callSuccess or not res or res == 0 then
@@ -194,21 +221,21 @@ local function processDemands()
             end
             
             local colQty   = padRight(totalNeeded, 4)
-            local tableRow = string.format("| %s | %s | ROUTING  |", colItem, colQty)
+            local tableRow = string.format("│ · %s │ %s │ ROUTE  │", colItem, colQty)
             table.insert(statusLines, { text = tableRow, color = colors.lime })
         else
             local craftQty = totalNeeded - available
             local colQty   = padRight(craftQty, 4)
             
             if isCraftable then
-                -- DEPLETED STATE (Quantum Amber Autocrafting)
+                -- CRAFTING (Quantum Amber)
                 pcall(ae2.craftItem, {name = itemID, count = craftQty})
                 
-                local tableRow = string.format("| %s | %s | CRAFTING |", colItem, colQty)
+                local tableRow = string.format("│ · %s │ %s │ CRAFT  │", colItem, colQty)
                 table.insert(statusLines, { text = tableRow, color = colors.orange })
             else
-                -- VOID STATE (Critical Missing Red)
-                local tableRow = string.format("| %s | %s | MISSING  |", colItem, colQty)
+                -- MISSING (Critical Missing Red)
+                local tableRow = string.format("│ · %s │ %s │ VOID   │", colItem, colQty)
                 table.insert(statusLines, { text = tableRow, color = colors.red })
             end
         end
@@ -220,16 +247,20 @@ end
 while true do
     local globalSuccess, globalErr = pcall(processDemands)
     if not globalSuccess then
-        local errText = "[ERR]: " .. tostring(globalErr):sub(1, 25)
+        local errText = "[ERR]: " .. tostring(globalErr):sub(1, 22)
         local mon = peripheral.find("monitor")
         if mon then
-            mon.setBackgroundColor(colors.red)
-            mon.setTextColor(colors.white)
+            mon.setBackgroundColor(colors.black)
+            mon.setTextColor(colors.red)
             mon.clear()
             mon.setCursorPos(1, 2)
-            mon.write("!! KERNEL PANIC !!")
+            mon.write("┌──────────────────────────────────┐")
             mon.setCursorPos(1, 3)
-            mon.write(errText)
+            mon.write("│       !! CRITICAL ERROR !!       │")
+            mon.setCursorPos(1, 4)
+            mon.write("│ " .. padRight(errText, 32) .. " │")
+            mon.setCursorPos(1, 5)
+            mon.write("└──────────────────────────────────┘")
         end
         print("\n[CRITICAL NETWORK EXCEPTION]: " .. tostring(globalErr))
     end
