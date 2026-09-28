@@ -1,6 +1,6 @@
 -- ATM10 MineColonies to AE2 Bridge Dashboard (Neon Tech Variant)
 -- Optimized for 5x3 Monitor with a Futuristic Dark Base Aesthetic
--- FUZZY MATRIX DISCOVERY CORE: Namespace Mapping and Parent Container Counts
+-- FUZZY MATRIX DISCOVERY CORE: Segregated Display Names vs. Exact Registry Lookups
 
 -- ====== CONFIGURATION ======
 local MONITOR_SIDE = "top"         
@@ -54,19 +54,28 @@ local C_SUCCESS = colors.lime        -- Plasma Green (Active/Fulfilling)
 local C_WARN    = colors.orange      -- Quantum Amber (Partial/Pending)
 local C_FAIL    = colors.red         -- Critical Red (Missing/Offline)
 -- ==========================================
--- Deep-inspect item names for fuzzy matrix matching using clean strings
+-- Deep-inspect namespaced item names for precise inventory matching
 local function matchSystemItem(colonyItemName, aeInventory)
-    if not aeInventory then return nil end
-    -- Normalize the incoming string name by isolating trailing strings and dropping special flags
-    local cleanName = colonyItemName:gsub(" ", ""):lower():gsub("^.*:", ""):gsub("_", "")
+    if not aeInventory or not colonyItemName then return nil end
+    
+    -- Normalize both sides to guarantee match regardless of extra spacing or casing
+    local target = colonyItemName:lower():gsub(" ", "")
     
     for _, item in ipairs(aeInventory) do
-        local techName = item.name:match(":([^:]+)$") or item.name or ""
-        local cleanTech = techName:gsub("_", ""):lower()
-        if cleanTech == cleanName or item.name:lower() == colonyItemName:lower() then
+        if item.name and item.name:lower():gsub(" ", "") == target then
             return item
         end
     end
+    
+    -- Fallback: If strict namespace matching fails, match via isolated trailing ID tag
+    local targetTag = target:match(":([^:]+)$") or target
+    for _, item in ipairs(aeInventory) do
+        local invTag = item.name:lower():match(":([^:]+)$") or item.name:lower()
+        if invTag == targetTag then
+            return item
+        end
+    end
+    
     return nil
 end
 
@@ -107,28 +116,27 @@ local function networkWorker()
                 end
                 
                 for _, req in ipairs(requests) do
-                    -- COMBINATION FIX: Extract exact request number from parent container count field
+                    -- ARCHITECTURAL PRESERVATION: Pull quantities safely from the parent object container
                     local needed = req.count or req.needed or 1
                     
                     for _, item in ipairs(req.items) do
-                        -- Preserve raw registry metadata identifier string for clean system checks
-                        local rawRegistryName = item.name or item.id or item.display_name or "Unknown"
+                        -- Extract raw namespaced ID string (e.g. "minecolonies:rack" or "minecraft:spruce_fence")
+                        local rawRegistryName = item.name or item.id or "Unknown"
                         
-                        -- Strip trailing custom data blocks or sorting tags safely
                         if type(rawRegistryName) == "string" then
                             rawRegistryName = rawRegistryName:match("^[^#]+") or rawRegistryName
                         end
                         
-                        -- Process display format string separately (e.g. minecolonies:rack -> Rack)
+                        -- UI PRESENTATION SEGREGATION: Format readable display strings strictly for the monitor
                         local displayItemName = rawRegistryName:gsub("^.*:", ""):gsub("_", " ")
                         displayItemName = displayItemName:sub(1,1):upper() .. displayItemName:sub(2)
                         
+                        -- BACKEND CONTEXT: Query the inventory system via the exact namespaced ID string
                         local systemItem = matchSystemItem(rawRegistryName, aeInventory)
                         local status = "Missing"
                         local available = 0
                         
                         if systemItem then
-                            -- Safeguard lookup: pull available stock numbers using item table properties directly
                             available = systemItem.amount or 0
                             
                             if available >= needed then
