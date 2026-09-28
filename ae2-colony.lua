@@ -1,10 +1,10 @@
 -- ATM10 MineColonies to AE2 Bridge Supply Engine
--- Production Core (ATM10 v8.1 / MC 1.21.1 / Dynamic Scroll & CPU Matrix Edition)
+-- Production Core (ATM10 v8.1 / MC 1.21.1 / Extended Balanced Monitor Layout)
 
 -- ====== CONFIGURATION ======
 local EXPORT_CONTAINER = "sophisticatedstorage:barrel_0"   
-local REFRESH_RATE = 4       -- Slightly faster loop cycle for smoother screen ticking
-local SCROLL_LINES_PER_PAGE = 6 -- Maximum data items to render on a 5x3 monitor at TextScale 1
+local REFRESH_RATE = 4       
+local SCROLL_LINES_PER_PAGE = 6 
 -- ===========================
 
 local tickState = true
@@ -21,6 +21,7 @@ local function extractItemString(itemObj)
     return nil
 end
 
+-- Pads or truncates text to an exact length
 local function padRight(text, length)
     text = tostring(text)
     if #text >= length then
@@ -38,7 +39,6 @@ local function getCpuMetrics(ae2)
     local total = #cpus
     local active = 0
     for _, cpu in ipairs(cpus) do
-        -- Checks if the CPU cluster is actively processing a scheduled task
         if cpu.isBusy or cpu.active or (cpu.storage and cpu.storage > 0 and cpu.craftingJob) then
             active = active + 1
         end
@@ -54,35 +54,41 @@ local function renderDashboard(statusLines)
 
     local cpuUsage = getCpuMetrics(ae2)
 
-    -- 1. Standard Computer Terminal Printing Fallback
+    -- 1. Standard Computer Terminal Fallback Printing
     term.clear()
     term.setCursorPos(1,1)
-    print("=== LOGISTICS HUB: " .. os.date("%H:%M:%S") .. " ===")
-    print(string.format("NET: AP[%s] ME[%s] OUT[%s] | CPU[%s]", colony and "ON" or "OFF", ae2 and "ON" or "OFF", barrel and "ON" or "OFF", cpuUsage))
-    print("| ITEM         | QTY | STATUS    |")
+    print("=== LOGISTICS HUB ===")
     for _, line in ipairs(statusLines) do print(line.text) end
 
-    -- 2. Advanced Multi-Block Monitor Printing Layout
+    -- 2. Advanced Multi-Block Monitor Layout
     if mon then
-        mon.setTextScale(1.0) -- Increased to 1.0 for high visibility walking past
+        mon.setTextScale(1.0) 
         mon.clear()
-        local w, h = mon.getSize()
+        local w, h = mon.getSize() -- w is exactly 36 on a standard 5x3 at scale 1
         
-        -- Row 1: Cyberpunk Header Bar
+        -- Row 1: Centered Cyberpunk Header Ribbon
         mon.setBackgroundColor(colors.gray)
         mon.setTextColor(colors.white)
         mon.setCursorPos(1, 1)
         mon.clearLine()
+        
         local pulse = tickState and "*" or " "
         tickState = not tickState
-        mon.write(" MATRIX CONTROL [" .. pulse .. "] " .. os.date("%H:%M:%S"))
+        local headerText = "LOGISTICS MATRIX [" .. pulse .. "] " .. os.date("%H:%M:%S")
+        local headerPad = math.max(1, math.floor((w - #headerText) / 2))
+        mon.setCursorPos(headerPad, 1)
+        mon.write(headerText)
         
-        -- Row 2: Live Network Infrastructure Grid
+        -- Reset background for information rows
         mon.setBackgroundColor(colors.black)
-        mon.setCursorPos(1, 2)
+        
+        -- Row 2: Centered Infrastructure Node Ticker
+        local netText = string.format("NET: AP[%s] ME[%s] OUT[%s]", colony and "ON" or "OFF", ae2 and "ON" or "OFF", barrel and "ON" or "OFF")
+        local netPad = math.max(1, math.floor((w - #netText) / 2))
+        
+        mon.setCursorPos(netPad, 2)
         mon.setTextColor(colors.lightGray)
         mon.write("NET: ")
-        
         mon.setTextColor(colony and colors.lime or colors.red)
         mon.write("AP[" .. (colony and "ON" or "OFF") .. "] ")
         mon.setTextColor(ae2 and colors.lime or colors.red)
@@ -90,26 +96,29 @@ local function renderDashboard(statusLines)
         mon.setTextColor(barrel and colors.lime or colors.red)
         mon.write("OUT[" .. (barrel and "ON" or "OFF") .. "]")
 
-        -- Row 3: Active Crafting Load Readout
-        mon.setCursorPos(1, 3)
+        -- Row 3: Centered Active Computing Load Metrics
+        local cpuText = "AE2 COMPUTE: CPU[" .. cpuUsage .. "]"
+        local cpuPad = math.max(1, math.floor((w - #cpuText) / 2))
+        mon.setCursorPos(cpuPad, 3)
         mon.setTextColor(colors.lightGray)
-        mon.write("AE2 COMPUTING LOAD: ")
+        mon.write("AE2 COMPUTE: ")
         mon.setTextColor(cpuUsage:sub(1,1) == "0" and colors.cyan or colors.magenta)
         mon.write("CPU[" .. cpuUsage .. "]")
 
-        -- Row 5: Table Header Strip
+        -- Row 5: Widened Balanced Table Header Strip (Takes exactly 36 characters)
+        -- ITEM: 16 chars | QTY: 4 chars | STATUS: 8 chars (+ spacing and boundaries = 36)
         mon.setCursorPos(1, 5)
         mon.setTextColor(colors.yellow)
-        mon.write("| ITEM         | QTY | STATUS    |")
+        mon.write("| ITEM             | QTY  | STATUS   |")
         
-        -- Rows 6+: Scrolled Matrix Window
+        -- Rows 6+: Full-Width Page Scrolling Windows
         local currentLine = 6
         if #statusLines == 0 then
             mon.setCursorPos(1, currentLine)
             mon.setTextColor(colors.lightBlue)
-            mon.write("| [All Demands Cleared]          |")
+            -- Perfectly aligned blank filler line across the 36 char frame
+            mon.write("| [All Demands Cleared]            |")
         else
-            -- Advance window view index if the listing exceeds layout window size
             if scrollIndex > #statusLines then scrollIndex = 1 end
             
             local renderedCount = 0
@@ -125,7 +134,6 @@ local function renderDashboard(statusLines)
                 renderedCount = renderedCount + 1
             end
             
-            -- Increment page indices smoothly across refreshing clock frames
             if #statusLines > SCROLL_LINES_PER_PAGE then
                 scrollIndex = scrollIndex + SCROLL_LINES_PER_PAGE
             else
@@ -151,9 +159,7 @@ local function processDemands()
         return
     end
 
-    -- Consolidated mapping cache to combine identical demands together
     local mergedDemands = {}
-
     for _, req in ipairs(requests) do
         local needed = req.count or req.needed or 1
         if req.items then
@@ -167,7 +173,6 @@ local function processDemands()
         end
     end
 
-    -- Process our neatly compressed table list
     for itemID, totalNeeded in pairs(mergedDemands) do
         local cleanName = itemID:gsub("^[^:]+:", "")
         
@@ -177,7 +182,8 @@ local function processDemands()
         local available = detail and (detail.count or detail.amount) or 0
         local isCraftable = detail and detail.isCraftable or false
 
-        local colItem = padRight(cleanName, 12)
+        -- Stretch item description column to 16 characters wide to match the new grid boundaries
+        local colItem = padRight(cleanName, 16)
 
         if available >= totalNeeded then
             -- ROUTING STATE (Plasma Green)
@@ -187,12 +193,12 @@ local function processDemands()
                 pcall(ae2.exportItem, EXPORT_CONTAINER, itemTable)
             end
             
-            local colQty   = padRight(totalNeeded, 3)
+            local colQty   = padRight(totalNeeded, 4)
             local tableRow = string.format("| %s | %s | ROUTING  |", colItem, colQty)
             table.insert(statusLines, { text = tableRow, color = colors.lime })
         else
             local craftQty = totalNeeded - available
-            local colQty   = padRight(craftQty, 3)
+            local colQty   = padRight(craftQty, 4)
             
             if isCraftable then
                 -- DEPLETED STATE (Quantum Amber Autocrafting)
