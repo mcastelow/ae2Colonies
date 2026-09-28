@@ -1,6 +1,6 @@
 -- ATM10 MineColonies to AE2 Bridge Dashboard (Neon Tech Variant)
 -- Optimized for 5x3 Monitor with a Futuristic Dark Base Aesthetic
--- FUZZY MATRIX DISCOVERY CORE: Zero-failure string mapping and flat routing parameters
+-- FUZZY MATRIX DISCOVERY CORE: Option 1 Structural Key Extraction
 
 -- ====== CONFIGURATION ======
 local MONITOR_SIDE = "top"         
@@ -54,6 +54,110 @@ local C_SUCCESS = colors.lime        -- Plasma Green (Active/Fulfilling)
 local C_WARN    = colors.orange      -- Quantum Amber (Partial/Pending)
 local C_FAIL    = colors.red         -- Critical Red (Missing/Offline)
 -- ==========================================
+-- Deep-inspect item names for fuzzy matrix matching
+local function matchSystemItem(colonyItemName, aeInventory)
+    if not aeInventory then return nil end
+    local cleanName = colonyItemName:gsub(" ", ""):lower():gsub("minecraft:", ""):gsub("_", "")
+    
+    for _, item in ipairs(aeInventory) do
+        local techName = item.name:match(":([^:]+)$") or item.name or ""
+        if techName:gsub("_", ""):lower() == cleanName or item.name:lower() == colonyItemName:lower() then
+            return item
+        end
+    end
+    return nil
+end
+
+local function networkWorker()
+    term.clear()
+    while true do
+        term.setCursorPos(1,1)
+        print("=== LOGISTICS KERNEL ASYNC SYSTEM RUNNING ===")
+        local colony = peripheral.find("colony_integrator")
+        local ae2 = peripheral.find("me_bridge")
+        colonyConnected = (colony ~= nil)
+        ae2Connected = (ae2 ~= nil)
+        
+        if not colony or not ae2 then
+            hasActiveErrors = true
+            currentRequests = {}
+            currentTickProgress = 0
+            sleep(REFRESH_RATE)
+        else
+            isPolling = true
+            currentTickProgress = 100
+            local success, requests = pcall(colony.getRequests)
+            isPolling = false
+            
+            if not success or not requests then
+                hasActiveErrors = true
+                currentRequests = {}
+                sleep(REFRESH_RATE)
+            else
+                hasActiveErrors = false
+                local tempRequests = {}
+                print(":: Polled Network: " .. #requests .. " groups at " .. os.date("%H:%M:%S"))
+                
+                local aeInventory = {}
+                local listSuccess, listData = pcall(function() return ae2.listItems() or ae2.getItems() end)
+                if listSuccess and listData then
+                    aeInventory = listData
+                end
+                
+                for _, req in ipairs(requests) do
+                    for _, item in ipairs(req.items) do
+                        -- OPTION 1: Use .id or .display_name to completely bypass unique GUID strings
+                        local itemName = item.id or item.display_name or item.name or "Unknown Item"
+                        local needed = item.count or item.needed or 1
+                        
+                        -- Strip item descriptor metadata headers if modern ME Bridge expects flat strings
+                        if type(itemName) == "string" then
+                            itemName = itemName:match("^[^#]+") or itemName
+                        end
+                        
+                        local systemItem = matchSystemItem(itemName, aeInventory)
+                        local status = "Missing"
+                        local available = 0
+                        
+                        if systemItem then
+                            local detail = ae2.getItem({name = systemItem.name})
+                            available = detail and detail.amount or 0
+                            
+                            if available >= needed then
+                                status = "Exporting"
+                                -- MODERN SIGNATURE: exportItem({name="mod:id", count=X}, direction)
+                                local expSuccess = ae2.exportItem({name = systemItem.name, count = needed}, EXPORT_DIRECTION)
+                                if expSuccess then
+                                    addDelivery(itemName, needed)
+                                    addLog("Exported " .. needed .. "x " .. itemName)
+                                end
+                            else
+                                status = "Crafting"
+                                local craftQty = needed - available
+                                -- MODERN SIGNATURE: requestCrafting({name="mod:id"}, count)
+                                local craftSuccess, err = ae2.requestCrafting({name = systemItem.name}, craftQty)
+                                if not craftSuccess then
+                                    status = "Craft Fail"
+                                    addLog("Craft Fail: " .. (err or "No CPU"))
+                                end
+                            end
+                        else
+                            addLog("No AE2 item map for: " .. itemName)
+                        end
+                        
+                        local displayStatus = string.format("[%s]", status)
+                        table.insert(tempRequests, {
+                            text = string.format("%-22s | %-5d | %s", itemName:sub(1, 22), needed, displayStatus),
+                            color = (status == "Exporting") and C_SUCCESS or ((status == "Crafting") and C_WARN or C_FAIL)
+                        })
+                    end
+                end
+                currentRequests = tempRequests
+                sleep(REFRESH_RATE)
+            end
+        end
+    end
+end
 local function drawHeader()
     monitor.setBackgroundColor(C_BG)
     monitor.clear()
@@ -68,7 +172,6 @@ local function drawHeader()
     monitor.setCursorPos(padding + 1, 1)
     monitor.write(title)
     
-    -- PROGRESS TELEMETRY MATRIX BAR [====    ]
     local barWidth = 8
     local progressChars = math.floor((currentTickProgress / 100) * barWidth)
     if progressChars > barWidth then progressChars = barWidth end
@@ -76,11 +179,7 @@ local function drawHeader()
     local barText = "[" .. string.rep("=", progressChars) .. string.rep(" ", barWidth - progressChars) .. "]"
     monitor.setCursorPos(w - (barWidth + 2), 1)
     
-    if isPolling then
-        monitor.setTextColor(C_SUB)
-    else
-        monitor.setTextColor(C_SUCCESS)
-    end
+    if isPolling then monitor.setTextColor(C_SUB) else monitor.setTextColor(C_SUCCESS) end
     monitor.write(barText)
     
     monitor.setBackgroundColor(C_BG)
@@ -120,7 +219,6 @@ local function drawHeader()
 end
 
 local function drawDebugPanel()
-    -- EXPLICIT COMPLIANCE: Error panel completely hides if hasActiveErrors resolves to false
     if hasActiveErrors then
         local startY = h - 4
         monitor.setCursorPos(1, startY)
@@ -187,163 +285,6 @@ local function renderLoop()
         sleep(0.2)
     end
 end
-local function networkWorker()
-    term.clear()
-    while true do
-        term.setCursorPos(1,1)
-        print("=== LOGISTICS KERNEL ASYNC SYSTEM RUNNING ===")
-        local colony = peripheral.find("colony_integrator")
-        local ae2 = peripheral.find("me_bridge")
-        colonyConnected = (colony ~= nil)
-        ae2Connected = (ae2 ~= nil)
-        
-        if not colony or not ae2 then
-            hasActiveErrors = true
-            currentRequests = {}
-            currentTickProgress = 0
-            sleep(REFRESH_RATE)
-        else
-            isPolling = true
-            currentTickProgress = 100
-            local success, requests = pcall(colony.getRequests)
-            isPolling = false
-            
-            if not success or not requests then
-                hasActiveErrors = true
-                currentRequests = {}
-                sleep(REFRESH_RATE)
-            else
-                hasActiveErrors = false
-                local tempRequests = {}
-                print(":: Polled Network: " .. #requests .. " groups at " .. os.date("%H:%M:%S"))
-                
-                -- FUZZY DISCOVERY SCAN: Cache everything in storage via string indexing to bypass key bugs
-                local aeInventory = {}
-                local listSuccess, listData = pcall(function() return ae2.listItems() or ae2.getItems() end)
-                if listSuccess and listData then
-                    for _, item in ipairs(listData) do
-                        local nameKey = item.name or item.id
-                        if nameKey then
-                            aeInventory[nameKey] = {
-                                amount = tonumber(item.amount) or tonumber(item.count) or 0,
-                                craftable = item.isCraftable or item.craftable or false
-                            }
-                        end
-                    end
-                end
-                
-                for _, req in ipairs(requests) do
-                    sleep(0.01)
-                    
-                    local extractedItems = {}
-                    if req.items and type(req.items) == "table" then
-                        for _, subItem in pairs(req.items) do
-                            if type(subItem) == "table" then table.insert(extractedItems, subItem) end
-                        end
-                        if #extractedItems == 0 then table.insert(extractedItems, req.items) end
-                    elseif type(req.item) == "table" then
-                        for _, subItem in pairs(req.item) do
-                            if type(subItem) == "table" then table.insert(extractedItems, subItem) end
-                        end
-                        if #extractedItems == 0 then table.insert(extractedItems, req.item) end
-                    else
-                        table.insert(extractedItems, req)
-                    end
-                    
-                    for _, activeItem in ipairs(extractedItems) do
-                        local itemID = "void:null"
-                        local displayName = "Unknown Block"
-                        local needed = 0
-                        
-                        if type(activeItem) == "table" then
-                            itemID = activeItem.name or activeItem.id or (activeItem.item and activeItem.item.name) or "void:null"
-                            displayName = activeItem.displayName or activeItem.name or itemID
-                            needed = tonumber(activeItem.count) or tonumber(activeItem.needed) or tonumber(activeItem.amount) or 0
-                            if (needed == 0 or needed == 1) and activeItem.item and type(activeItem.item) == "table" then
-                                needed = tonumber(activeItem.item.count) or tonumber(activeItem.item.needed) or tonumber(activeItem.item.amount) or needed
-                            end
-                        elseif type(activeItem) == "string" then
-                            itemID = activeItem
-                            displayName = itemID
-                        end
-                        
-                        -- Enforce top-level requirement extraction values to maintain correct totals
-                        if needed == 0 or needed == 1 then
-                            needed = tonumber(req.count) or tonumber(req.needed) or tonumber(req.amount) or needed
-                        end
-                        
-                        if itemID ~= "void:null" and needed > 0 then
-                            if not string.find(itemID, ":") then itemID = "minecraft:" .. itemID end
-                            
-                            displayName = displayName:gsub("minecraft:", ""):gsub("domum_ornamentum:", "")
-                            displayName = displayName:gsub("^%l", string.upper):gsub("_", " ")
-                            if #displayName > 22 then displayName = displayName:sub(1, 19) .. "..." end
-                            
-                            local linePrefix = string.format("%-22s | %-5d | ", displayName, needed)
-                            
-                            -- Extract data from our clean fuzzy cache string map
-                            local matchData = aeInventory[itemID]
-                            local available = matchData and matchData.amount or 0
-                            local craftable = matchData and matchData.craftable or false
-                            
-                            -- Fallback: If cache lookup came back empty, run single item query checks
-                            if available == 0 and not craftable then
-                                local singleSuccess, singleItem = pcall(function() return ae2.getItem({name = itemID}) or ae2.getItem({item = itemID}) end)
-                                if singleSuccess and singleItem then
-                                    available = tonumber(singleItem.amount) or tonumber(singleItem.count) or 0
-                                    craftable = singleItem.isCraftable or singleItem.craftable or false
-                                end
-                            end
-                            
-                            if available >= needed then
-                                table.insert(tempRequests, {text = linePrefix .. "▶ ROUTING", color = C_SUCCESS})
-                                
-                                -- 1.21 HYPER-STABLE EXTRACTION DISPATCH ENGINE
-                                local ok = pcall(function() return ae2.exportItem({name = itemID, count = needed}, EXPORT_DIRECTION) end)
-                                if not ok then
-                                    ok = pcall(function() return ae2.exportItemToPeripheral({id = itemID, count = needed}, EXPORT_DIRECTION) end)
-                                end
-                                if ok then addDelivery(displayName, needed) end
-                                
-                            elseif available > 0 and available < needed then
-                                table.insert(tempRequests, {text = linePrefix .. "⚠ DEPLETED (" .. available .. ")", color = C_WARN})
-                                
-                                local ok = pcall(function() return ae2.exportItem({name = itemID, count = available}, EXPORT_DIRECTION) end)
-                                if not ok then
-                                    ok = pcall(function() return ae2.exportItemToPeripheral({id = itemID, count = available}, EXPORT_DIRECTION) end)
-                                end
-                                if ok then 
-                                    addDelivery(displayName, available)
-                                    if craftable then 
-                                        local craftShortage = needed - available
-                                        pcall(function() return ae2.requestCrafting({id = itemID, count = craftShortage}) or ae2.craftItem({name = itemID, count = craftShortage}) end) 
-                                    end
-                                end
-                            else
-                                if craftable then
-                                    table.insert(tempRequests, {text = linePrefix .. "⚒ QUEUED", color = C_SUB})
-                                    pcall(function() return ae2.requestCrafting({id = itemID, count = needed}) or ae2.craftItem({name = itemID, count = needed}) end)
-                                else
-                                    table.insert(tempRequests, {text = linePrefix .. "✖ VOID", color = C_FAIL})
-                                end
-                            end
-                        end
-                    end
-                end
-                
-                currentRequests = tempRequests
-                
-                -- Animate loading ticks smoothly
-                local totalSleep = REFRESH_RATE
-                local increments = 25
-                local stepTime = totalSleep / increments
-                for i = increments, 0, -1 do
-                    currentTickProgress = math.floor((i / increments) * 100)
-                    sleep(stepTime)
-                end
-            end
-        end
-    end
-end
 
-parallel.waitForAny(renderLoop, networkWorker)
+-- Concurrent Thread Executor Orchestration
+parallel.waitForAll(renderLoop, networkWorker)
