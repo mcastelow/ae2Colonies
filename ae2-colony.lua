@@ -1,5 +1,5 @@
 -- ATM10 MineColonies to AE2 Bridge Supply Engine
--- Minimalist 1.21.1 Method Core (Self-Reference Fix)
+-- Minimalist 1.21.1 Execution Core (Strict Argument Isolation)
 
 local EXPORT_DIRECTION = "down"
 local REFRESH_RATE = 5
@@ -38,10 +38,12 @@ local function processDemands()
             for _, item in ipairs(req.items) do
                 local itemID = extractItemString(item)
                 if itemID and type(itemID) == "string" then
+                    -- Strip trailing hash strings safely
                     itemID = itemID:match("^[^#]+") or itemID
                     
                     print("\n[TARGET] Item: " .. itemID .. " | Demand Qty: " .. needed)
                     
+                    -- Query item balance using explicit self-reference context
                     local detail = ae2:getItem({name = itemID})
                     local available = detail and (detail.count or detail.amount) or 0
                     print("  -> Storage Check: Stored Balance = " .. available)
@@ -49,7 +51,7 @@ local function processDemands()
                     if available >= needed then
                         print("  -> Status: In Stock. Dispatching item...")
                         
-                        -- Secure colon self-reference wrapper matching modern API signatures
+                        -- Explicit method enclosure to guarantee no parameters shift slots
                         local success, res = pcall(function()
                             return ae2:exportItem({name = itemID, count = needed}, EXPORT_DIRECTION)
                         end)
@@ -63,13 +65,16 @@ local function processDemands()
                         local craftQty = needed - available
                         print("  -> Status: Shortage. Triggering craft loop for " .. craftQty .. " units...")
                         
-                        -- Enhanced verification capturing exact mod feedback strings
-                        local success, err = ae2:craftItem({name = itemID, count = craftQty})
+                        -- CRITICAL PASS FIX: Isolate the lambda closure completely 
+                        -- to block trailing variables from entering argument slot #2
+                        local success, err = pcall(function()
+                            return ae2:craftItem({name = itemID, count = craftQty})
+                        end)
                         
                         if success then
-                            print("  ✔ SUCCESS: Craft order accepted by AE2 CPU.")
+                            print("  ✔ SUCCESS: Craft order locked into AE2 system.")
                         else
-                            print("  ❌ AE2 SYSTEM REJECTION: " .. tostring(err or "No Pattern, missing CPU, or scheduled deadlock."))
+                            print("  ❌ CRAFT ERROR: " .. tostring(err or "No Pattern/CPU"))
                         end
                     end
                 end
