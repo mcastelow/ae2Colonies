@@ -1,6 +1,6 @@
 -- ATM10 MineColonies to AE2 Bridge Dashboard (Neon Tech Variant)
 -- Optimized for 5x3 Monitor with a Futuristic Dark Base Aesthetic
--- FUZZY MATRIX DISCOVERY CORE: Segregated Display Names vs. Exact Registry Lookups
+-- DIAGNOSTIC BUILD: Terminal-Scrolled String Matching Analysis Loop
 
 -- ====== CONFIGURATION ======
 local MONITOR_SIDE = "top"         
@@ -58,16 +58,16 @@ local C_FAIL    = colors.red         -- Critical Red (Missing/Offline)
 local function matchSystemItem(colonyItemName, aeInventory)
     if not aeInventory or not colonyItemName then return nil end
     
-    -- Normalize both sides to guarantee match regardless of extra spacing or casing
     local target = colonyItemName:lower():gsub(" ", "")
     
+    -- Strict Match Pass
     for _, item in ipairs(aeInventory) do
         if item.name and item.name:lower():gsub(" ", "") == target then
             return item
         end
     end
     
-    -- Fallback: If strict namespace matching fails, match via isolated trailing ID tag
+    -- Sub-Tag Fallback Match Pass
     local targetTag = target:match(":([^:]+)$") or target
     for _, item in ipairs(aeInventory) do
         local invTag = item.name:lower():match(":([^:]+)$") or item.name:lower()
@@ -80,10 +80,12 @@ local function matchSystemItem(colonyItemName, aeInventory)
 end
 
 local function networkWorker()
+    -- Prepare terminal for rolling diagnostic records
     term.clear()
+    term.setCursorPos(1,1)
+    print("=== LOGISTICS KERNEL TERMINAL LOGGER ACTIVE ===")
+    
     while true do
-        term.setCursorPos(1,1)
-        print("=== LOGISTICS KERNEL ASYNC SYSTEM RUNNING ===")
         local colony = peripheral.find("colony_integrator")
         local ae2 = peripheral.find("me_bridge")
         colonyConnected = (colony ~= nil)
@@ -107,7 +109,9 @@ local function networkWorker()
             else
                 hasActiveErrors = false
                 local tempRequests = {}
-                print(":: Polled Network: " .. #requests .. " groups at " .. os.date("%H:%M:%S"))
+                
+                print(string.format("\n--- NETWORK POLL MATRIX [%s] ---", os.date("%H:%M:%S")))
+                print("Polled active Colony request batches: " .. #requests)
                 
                 local aeInventory = {}
                 local listSuccess, listData = pcall(function() return ae2.listItems() or ae2.getItems() end)
@@ -116,32 +120,32 @@ local function networkWorker()
                 end
                 
                 for _, req in ipairs(requests) do
-                    -- ARCHITECTURAL PRESERVATION: Pull quantities safely from the parent object container
                     local needed = req.count or req.needed or 1
                     
                     for _, item in ipairs(req.items) do
-                        -- Extract raw namespaced ID string (e.g. "minecolonies:rack" or "minecraft:spruce_fence")
                         local rawRegistryName = item.name or item.id or "Unknown"
                         
                         if type(rawRegistryName) == "string" then
                             rawRegistryName = rawRegistryName:match("^[^#]+") or rawRegistryName
                         end
                         
-                        -- UI PRESENTATION SEGREGATION: Format readable display strings strictly for the monitor
                         local displayItemName = rawRegistryName:gsub("^.*:", ""):gsub("_", " ")
                         displayItemName = displayItemName:sub(1,1):upper() .. displayItemName:sub(2)
                         
-                        -- BACKEND CONTEXT: Query the inventory system via the exact namespaced ID string
+                        -- CRITICAL DEBUGLOG: Print exact input structure to computer terminal
+                        print(string.format("[TRYING] Colony ID: '%s' | Qty: %d", tostring(rawRegistryName), needed))
+                        
                         local systemItem = matchSystemItem(rawRegistryName, aeInventory)
                         local status = "Missing"
                         local available = 0
                         
                         if systemItem then
                             available = systemItem.amount or 0
+                            -- CRITICAL DEBUGLOG: Confirm successful match properties on terminal
+                            print(string.format("  -> MATCH FOUND! AE2 Registry: '%s' | Stock: %d", tostring(systemItem.name), available))
                             
                             if available >= needed then
                                 status = "Exporting"
-                                -- MODERN SIGNATURE: exportItem({name="mod:id", count=X}, direction)
                                 local expSuccess = ae2.exportItem({name = systemItem.name, count = needed}, EXPORT_DIRECTION)
                                 if expSuccess then
                                     addDelivery(displayItemName, needed)
@@ -150,7 +154,6 @@ local function networkWorker()
                             else
                                 status = "Crafting"
                                 local craftQty = needed - available
-                                -- MODERN SIGNATURE: requestCrafting({name="mod:id"}, count)
                                 local craftSuccess, err = ae2.requestCrafting({name = systemItem.name}, craftQty)
                                 if not craftSuccess then
                                     status = "Craft Fail"
@@ -158,6 +161,8 @@ local function networkWorker()
                                 end
                             end
                         else
+                            -- CRITICAL DEBUGLOG: Explicit failure note on terminal
+                            print("  -> ERROR: No match inside AE2 Registry arrays.")
                             addLog("No AE2 item map for: " .. displayItemName)
                         end
                         
