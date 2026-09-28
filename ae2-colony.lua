@@ -1,6 +1,6 @@
 -- ATM10 MineColonies to AE2 Bridge Dashboard (Neon Tech Variant)
 -- Optimized for 5x3 Monitor with a Futuristic Dark Base Aesthetic
--- ADVANCED BUILD: File-Logged Isolated Registry Diagnostic Build
+-- FIX BUILD: Modern AP v0.7.x Filtered Table Query Alignment
 
 -- ====== CONFIGURATION ======
 local MONITOR_SIDE = "top"         
@@ -54,7 +54,7 @@ local C_SUCCESS = colors.lime        -- Plasma Green (Active/Fulfilling)
 local C_WARN    = colors.orange      -- Quantum Amber (Partial/Pending)
 local C_FAIL    = colors.red         -- Critical Red (Missing/Offline)
 -- ==========================================
--- Triple-pass lookup targeting every possible variable property in ATM10 Advanced Peripherals
+-- Triple-pass lookup targeting modern Advanced Peripherals data structure variants
 local function matchSystemItem(colonyItemName, aeInventory)
     if not aeInventory or not colonyItemName then return nil end
     
@@ -62,17 +62,17 @@ local function matchSystemItem(colonyItemName, aeInventory)
     local targetTag = target:match(":([^:]+)$") or target
     
     for _, item in ipairs(aeInventory) do
-        -- Extract any string identifier from item tables (name, id, fingerprint, display_name, item object)
+        -- Check name, id, fingerprint, or nested object targets fields
         local aeRaw = item.name or item.id or item.fingerprint or (type(item.item) == "table" and item.item.id) or ""
         if type(aeRaw) == "string" and aeRaw ~= "" then
             local aeClean = aeRaw:lower():gsub(" ", "")
             
-            -- PASS 1: Strict Raw Equivalent Match
+            -- PASS 1: Strict Namespace Comparison Match
             if aeClean == target then
                 return item
             end
             
-            -- PASS 2: Stripped Mod Namespace Tag Match
+            -- PASS 2: Stripped Item Tag Comparison Fallback
             local aeTag = aeClean:match(":([^:]+)$") or aeClean
             if aeTag == targetTag then
                 return item
@@ -87,7 +87,7 @@ local function networkWorker()
     term.setCursorPos(1,1)
     print("=== LOGISTICS KERNEL TERMINAL LOGGER ACTIVE ===")
     print("Diagnostic logs will be saved to: ae2_dump.txt")
-    print("Open it using 'edit ae2_dump.txt' to view it without scrolling!")
+    print("Open it using 'edit ae2_dump.txt' to inspect structural contents.")
     
     local initialDumpWritten = false
     
@@ -95,7 +95,7 @@ local function networkWorker()
         local colony = peripheral.find("colony_integrator")
         local ae2 = peripheral.find("me_bridge")
         colonyConnected = (colony ~= nil)
-        ae2Connected = (me_bridge ~= nil) or (ae2 ~= nil)
+        ae2Connected = (ae2 ~= nil)
         
         if not colony or not ae2 then
             hasActiveErrors = true
@@ -117,12 +117,13 @@ local function networkWorker()
                 local tempRequests = {}
                 
                 local aeInventory = {}
-                local listSuccess, listData = pcall(function() return ae2.listItems() or ae2.getItems() or {} end)
+                -- MODERN CHANGE: listItems() is completely gone. getItems() must take a filter table payload.
+                local listSuccess, listData = pcall(function() return ae2.getItems({}) or {} end)
                 if listSuccess and listData then
                     aeInventory = listData
                     
-                    -- HIGH-UTILITY DIAGNOSTIC FILE GENERATION: Dump structure data safely without terminal spam
-                    if not initialDumpWritten then
+                    -- HIGH-UTILITY DIAGNOSTIC FILE: Generate structural key dump automatically on first loop
+                    if not initialDumpWritten and #aeInventory > 0 then
                         local logFile = fs.open("ae2_dump.txt", "w")
                         if logFile then
                             logFile.writeLine("=== AE2 INVENTORY FIELD DUMP MATCHING LOG ===")
@@ -147,6 +148,7 @@ local function networkWorker()
                                     dumpLimit = dumpLimit + 1
                                 end
                             end
+                            logFile.flush()
                             logFile.close()
                             initialDumpWritten = true
                             print("[DIAGNOSTICS] Done! Written 15 registry structure variants to 'ae2_dump.txt'")
@@ -172,7 +174,8 @@ local function networkWorker()
                         local available = 0
                         
                         if systemItem then
-                            available = systemItem.amount or systemItem.count or 0
+                            -- MODERN AP SPECIFICATION: Rely strictly on count instead of legacy amount
+                            available = systemItem.count or systemItem.amount or 0
                             
                             if available >= needed then
                                 status = "Exporting"
