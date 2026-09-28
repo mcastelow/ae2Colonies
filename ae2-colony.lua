@@ -1,5 +1,5 @@
 -- ATM10 MineColonies to AE2 Bridge Supply Engine
--- Audited 1.21.1 Execution Core (Dot-Notation Type Alignment)
+-- Fixed for 1.21.1+ ME Bridge Signatures
 
 local EXPORT_DIRECTION = "down"
 local REFRESH_RATE = 5
@@ -43,43 +43,43 @@ local function processDemands()
                     
                     print("\n[TARGET] Item: " .. itemID .. " | Demand Qty: " .. needed)
                     
-                    -- AUDITED CALL 1: Query item tracking properties securely via dot notation
                     local detail = ae2.getItem({name = itemID})
                     local available = detail and (detail.count or detail.amount) or 0
                     print("  -> Storage Check: Stored Balance = " .. available)
 
                     if available >= needed then
-                        print("  -> Status: In Stock. Executing audited export...")
+                        print("  -> Status: In Stock. Executing export...")
                         
-                        -- AUDITED CALL 2: Standardise on dot notation to fix string/table type collisions
-                        local success, res = pcall(ae2.exportItem, {name = itemID, count = needed}, EXPORT_DIRECTION)
+                        -- FIX 1: Try the new 1.21.1+ signature first (Direction, Item Table)
+                        local success, res, err = pcall(ae2.exportItem, EXPORT_DIRECTION, {name = itemID, count = needed})
                         
-                        -- Secure alternative identifier property fallback pass
-                        if not success or not res or res == 0 then
-                            success, res = pcall(ae2.exportItem, {id = itemID, count = needed}, EXPORT_DIRECTION)
+                        -- Fallback to old signature if the first one failed due to argument typing
+                        if not success or res == 0 then
+                            success, res, err = pcall(ae2.exportItem, {name = itemID, count = needed}, EXPORT_DIRECTION)
                         end
                         
-                        if success and (type(res) == "boolean" or (type(res) == "number" and res > 0)) then
+                        -- Double fallback check with alternative ID property
+                        if not success or res == 0 then
+                            pcall(ae2.exportItem, EXPORT_DIRECTION, {id = itemID, count = needed})
+                        end
+                        
+                        if success and (res and res ~= 0) then
                             print("  ✔ SUCCESS: Pulled items into delivery chest!")
                         else
-                            print("  ❌ EXPORT ERROR: " .. tostring(res or "No item moved / Obstructed"))
+                            print("  ❌ EXPORT ERROR: " .. tostring(res or err or "No item moved / Obstructed"))
                         end
                     else
                         local craftQty = needed - available
-                        print("  -> Status: Shortage. Executing audited crafting call for " .. craftQty .. " units...")
+                        print("  -> Status: Shortage. Executing crafting call for " .. craftQty .. " units...")
                         
-                        -- AUDITED CALL 3: Use strict dot notation to block self-reference tables from entering slot #2
-                        local success, err = pcall(ae2.craftItem, {name = itemID, count = craftQty})
+                        -- FIX 2: Evaluate the true return value of craftItem, not just pcall's status
+                        local pcallSuccess, craftSuccess, craftErr = pcall(ae2.craftItem, {name = itemID, count = craftQty})
                         
-                        -- Secure alternative identifier property fallback pass
-                        if not success then
-                            success, err = pcall(ae2.craftItem, {id = itemID, count = craftQty})
-                        end
-                        
-                        if success then
-                            print("  ✔ SUCCESS: Craft order locked into AE2 system.")
+                        if pcallSuccess and craftSuccess then
+                            print("  ✔ SUCCESS: Craft order accepted by AE2 system.")
                         else
-                            print("  ❌ CRAFT ERROR: " .. tostring(err or "No Pattern/CPU"))
+                            local actualError = craftErr or craftSuccess or "No Pattern, missing CPU, or no co-processors available"
+                            print("  ❌ CRAFT ERROR: " .. tostring(actualError))
                         end
                     end
                 end
