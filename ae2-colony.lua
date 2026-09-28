@@ -1,3 +1,4 @@
+--
 -- ATM10 MineColonies to AE2 Bridge Supply Engine
 -- Production Core (ATM10 v8.1 / MC 1.21.1 / AP v0.7.x)
 
@@ -54,20 +55,20 @@ local function processDemands()
                     print("  -> Storage Check: Stored Balance = " .. available)
 
                     if available >= needed then
-                        print("  -> Status: In Stock. Executing clean flat export...")
+                        print("  -> Status: In Stock. Executing clean export...")
                         
-                        -- CORRECTED: Pass flat primitive variables directly to the method pointer
-                        local callSuccess, res = pcall(ae2.exportItem, itemID, needed, EXPORT_TARGET:lower())
+                        -- FIXED: AP 1.21.1+ expects (direction, itemTable)
+                        local callSuccess, res, err = pcall(ae2.exportItem, EXPORT_TARGET:lower(), {name = itemID, count = needed})
                         
-                        if not callSuccess or not res or res == 0 then
-                            -- Fallback alternative: try uppercase cardinal direction string
-                            callSuccess, res = pcall(ae2.exportItem, itemID, needed, EXPORT_TARGET:upper())
+                        -- Fallback to old format (itemTable, direction) if required by your specific AP build
+                        if not callSuccess or res == 0 then
+                            callSuccess, res, err = pcall(ae2.exportItem, {name = itemID, count = needed}, EXPORT_TARGET:lower())
                         end
                         
-                        if callSuccess and (res == true or (type(res) == "number" and res > 0)) then
+                        if callSuccess and (res and res ~= 0) then
                             print("  ✔ SUCCESS: Pulled items to target container!")
                         else
-                            print("  ❌ EXPORT ERROR: " .. tostring(res or "INVENTORY_NOT_FOUND"))
+                            print("  ❌ EXPORT ERROR: " .. tostring(res or err or "INVENTORY_NOT_FOUND"))
                         end
                     else
                         local craftQty = needed - available
@@ -76,13 +77,14 @@ local function processDemands()
                         if isCraftable then
                             print("  -> Triggering autocraft for " .. craftQty .. " units...")
                             
-                            -- Isolated flat layout method matching contemporary craft parameters
-                            local callSuccess, craftErr = pcall(ae2.craftItem, itemID, craftQty)
+                            -- FIXED: Pass a proper item stack table, and catch both pcall and API return states
+                            local callSuccess, craftSuccess, craftErr = pcall(ae2.craftItem, {name = itemID, count = craftQty})
                             
-                            if callSuccess then
+                            if callSuccess and craftSuccess then
                                 print("  ✔ SUCCESS: Craft order locked into AE2 system.")
                             else
-                                print("  ❌ CRAFT ERROR: " .. tostring(craftErr or "Stalled"))
+                                local actualErr = craftErr or craftSuccess or "No CPU available or craft rejected"
+                                print("  ❌ CRAFT ERROR: " .. tostring(actualErr))
                             end
                         else
                             print("  ❌ CRAFT ABORTED: NOT_CRAFTABLE (No encoded AE2 Pattern found)")
