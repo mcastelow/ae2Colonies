@@ -38,12 +38,10 @@ local function processDemands()
             for _, item in ipairs(req.items) do
                 local itemID = extractItemString(item)
                 if itemID and type(itemID) == "string" then
-                    -- Strip trailing hash strings safely
                     itemID = itemID:match("^[^#]+") or itemID
                     
                     print("\n[TARGET] Item: " .. itemID .. " | Demand Qty: " .. needed)
                     
-                    -- Query item data safely via explicit colon instance context
                     local detail = ae2:getItem({name = itemID})
                     local available = detail and (detail.count or detail.amount) or 0
                     print("  -> Storage Check: Stored Balance = " .. available)
@@ -51,17 +49,10 @@ local function processDemands()
                     if available >= needed then
                         print("  -> Status: In Stock. Dispatching item...")
                         
-                        -- FIX: Use exact colon-notation method closure to pass self-references securely
+                        -- Secure colon self-reference wrapper matching modern API signatures
                         local success, res = pcall(function()
                             return ae2:exportItem({name = itemID, count = needed}, EXPORT_DIRECTION)
                         end)
-                        
-                        -- Flat string argument pass fallback using exact colon context
-                        if not success then
-                            success, res = pcall(function()
-                                return ae2:exportItem(itemID, needed, EXPORT_DIRECTION)
-                            end)
-                        end
                         
                         if success then
                             print("  ✔ SUCCESS: Pulled items into delivery chest!")
@@ -72,15 +63,13 @@ local function processDemands()
                         local craftQty = needed - available
                         print("  -> Status: Shortage. Triggering craft loop for " .. craftQty .. " units...")
                         
-                        -- Target crafting via identical wrapped colon methods
-                        local success, err = pcall(function()
-                            return ae2:craftItem({name = itemID, count = craftQty})
-                        end)
+                        -- Enhanced verification capturing exact mod feedback strings
+                        local success, err = ae2:craftItem({name = itemID, count = craftQty})
                         
                         if success then
-                            print("  ✔ SUCCESS: Craft order locked into AE2 system.")
+                            print("  ✔ SUCCESS: Craft order accepted by AE2 CPU.")
                         else
-                            print("  ❌ CRAFT ERROR: " .. tostring(err or "No Pattern/CPU"))
+                            print("  ❌ AE2 SYSTEM REJECTION: " .. tostring(err or "No Pattern, missing CPU, or scheduled deadlock."))
                         end
                     end
                 end
