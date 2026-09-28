@@ -1,6 +1,5 @@
---
 -- ATM10 MineColonies to AE2 Bridge Supply Engine
--- Minimalist 1.21.1 Execution Core (Strict Argument Isolation)
+-- Audited 1.21.1 Execution Core (Dot-Notation Type Alignment)
 
 local EXPORT_DIRECTION = "down"
 local REFRESH_RATE = 5
@@ -39,38 +38,43 @@ local function processDemands()
             for _, item in ipairs(req.items) do
                 local itemID = extractItemString(item)
                 if itemID and type(itemID) == "string" then
-                    -- Strip trailing hash strings safely
+                    -- Strip trailing NBT hash identifiers cleanly
                     itemID = itemID:match("^[^#]+") or itemID
                     
                     print("\n[TARGET] Item: " .. itemID .. " | Demand Qty: " .. needed)
                     
-                    -- Query item balance using explicit self-reference context
-                    local detail = ae2:getItem({name = itemID})
+                    -- AUDITED CALL 1: Query item tracking properties securely via dot notation
+                    local detail = ae2.getItem({name = itemID})
                     local available = detail and (detail.count or detail.amount) or 0
                     print("  -> Storage Check: Stored Balance = " .. available)
 
                     if available >= needed then
-                        print("  -> Status: In Stock. Dispatching item...")
+                        print("  -> Status: In Stock. Executing audited export...")
                         
-                        -- Explicit method enclosure to guarantee no parameters shift slots
-                        local success, res = pcall(function()
-                            return ae2:exportItem({name = itemID, count = needed}, EXPORT_DIRECTION)
-                        end)
+                        -- AUDITED CALL 2: Standardise on dot notation to fix string/table type collisions
+                        local success, res = pcall(ae2.exportItem, {name = itemID, count = needed}, EXPORT_DIRECTION)
                         
-                        if success then
+                        -- Secure alternative identifier property fallback pass
+                        if not success or not res or res == 0 then
+                            success, res = pcall(ae2.exportItem, {id = itemID, count = needed}, EXPORT_DIRECTION)
+                        end
+                        
+                        if success and (type(res) == "boolean" or (type(res) == "number" and res > 0)) then
                             print("  ✔ SUCCESS: Pulled items into delivery chest!")
                         else
-                            print("  ❌ EXPORT ERROR: " .. tostring(res or "No item moved"))
+                            print("  ❌ EXPORT ERROR: " .. tostring(res or "No item moved / Obstructed"))
                         end
                     else
                         local craftQty = needed - available
-                        print("  -> Status: Shortage. Triggering craft loop for " .. craftQty .. " units...")
+                        print("  -> Status: Shortage. Executing audited crafting call for " .. craftQty .. " units...")
                         
-                        -- CRITICAL PASS FIX: Isolate the lambda closure completely 
-                        -- to block trailing variables from entering argument slot #2
-                        local success, err = pcall(function()
-                            return ae2:craftItem({name = itemID, count = craftQty})
-                        end)
+                        -- AUDITED CALL 3: Use strict dot notation to block self-reference tables from entering slot #2
+                        local success, err = pcall(ae2.craftItem, {name = itemID, count = craftQty})
+                        
+                        -- Secure alternative identifier property fallback pass
+                        if not success then
+                            success, err = pcall(ae2.craftItem, {id = itemID, count = craftQty})
+                        end
                         
                         if success then
                             print("  ✔ SUCCESS: Craft order locked into AE2 system.")
@@ -87,7 +91,7 @@ end
 while true do
     local globalSuccess, globalErr = pcall(processDemands)
     if not globalSuccess then
-        print("\n[CRITICAL ERROR]: " .. tostring(globalErr))
+        print("\n[CRITICAL NETWORK EXCEPTION]: " .. tostring(globalErr))
     end
     sleep(REFRESH_RATE)
 end
