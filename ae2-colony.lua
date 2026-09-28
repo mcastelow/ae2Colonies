@@ -1,18 +1,20 @@
 -- ATM10 MineColonies to AE2 Bridge Supply Engine
--- Production Core (ATM10 v8.1 / MC 1.21.1 / Wired Network Mode)
+-- Production Core (ATM10 v8.1 / MC 1.21.1 / Wired Network + Cyberpunk UI Edition)
 
 -- ====== CONFIGURATION ======
--- Pointed directly to your connected Netherite Barrel network address
 local EXPORT_CONTAINER = "sophisticatedstorage:barrel_0"   
 local REFRESH_RATE = 5
 -- ===========================
 
--- Dynamically find the peripherals over the network cable
 local colony = peripheral.find("colony_integrator")
 local ae2 = peripheral.find("me_bridge")
+local mon = peripheral.find("monitor")
 
-if not colony then error("[FATAL] colony_integrator not detected on the modem network! (Did you right-click its modem?)") end
-if not ae2 then error("[FATAL] me_bridge not detected on the modem network! (Did you right-click its modem?)") end
+if not colony then error("[FATAL] colony_integrator not detected on the network!") end
+if not ae2 then error("[FATAL] me_bridge not detected on the network!") end
+
+-- Global tick tracker for the visual heartbeat animation
+local tickState = true
 
 local function extractItemString(itemObj)
     if not itemObj then return nil end
@@ -25,14 +27,57 @@ local function extractItemString(itemObj)
     return nil
 end
 
-local function processDemands()
+local function renderDashboard(statusLines)
+    -- Render to standard terminal console
     term.clear()
     term.setCursorPos(1,1)
     print("=== LOGISTICS EVENT TIMELINE: " .. os.date("%H:%M:%S") .. " ===")
-    
+    for _, line in ipairs(statusLines) do
+        print(line.text)
+    end
+
+    -- Render to Advanced Monitor ("monitor_0")
+    if mon then
+        mon.setTextScale(0.5) -- Small text for high scannability on a 5x3 screen
+        mon.clear()
+        
+        local w, h = mon.getSize()
+        
+        -- Header Bar Background (Deep Slate Blue)
+        mon.setBackgroundColor(colors.gray)
+        mon.setTextColor(colors.white)
+        mon.setCursorPos(1, 1)
+        mon.clearLine()
+        
+        -- Heartbeat ticker animation alternating between [ * ] and [   ]
+        local pulse = tickState and "*" or " "
+        tickState = not tickState
+        
+        local headerText = " LOGISTICS MATRIX [" .. pulse .. "] " .. os.date("%H:%M:%S")
+        mon.write(headerText)
+        
+        -- Reset background for body content
+        mon.setBackgroundColor(colors.black)
+        
+        local currentLine = 3
+        for _, line in ipairs(statusLines) do
+            if currentLine > h then break end -- Prevent screen overflow
+            
+            mon.setCursorPos(1, currentLine)
+            mon.setTextColor(line.color or colors.white)
+            mon.write(line.text)
+            currentLine = currentLine + 1
+        end
+    end
+end
+
+local function processDemands()
+    local statusLines = {}
     local requests = colony.getRequests()
+    
     if not requests or #requests == 0 then
-        print(">> Status: System Idle. All colony demands met.")
+        table.insert(statusLines, {text = ">> MATRIX IDLE: Demands satisfied.", color = colors.lightBlue})
+        renderDashboard(statusLines)
         return
     end
 
@@ -44,62 +89,70 @@ local function processDemands()
                 if itemID and type(itemID) == "string" then
                     itemID = itemID:match("^[^#]+") or itemID
                     
-                    print("\n[TARGET] Item: " .. itemID .. " | Demand Qty: " .. needed)
+                    -- Strip mod prefixes (e.g. 'minecraft:oak_log' -> 'oak_log') and cap length
+                    local cleanName = itemID:gsub("^[^:]+:", "")
+                    if #cleanName > 15 then
+                        cleanName = cleanName:sub(1, 13) .. ".."
+                    end
                     
                     local detail = ae2.getItem({id = itemID})
                     if not detail then detail = ae2.getItem({name = itemID}) end
                     
                     local available = detail and (detail.count or detail.amount) or 0
                     local isCraftable = detail and detail.isCraftable or false
-                    
-                    print("  -> Storage Check: Stored Balance = " .. available)
 
                     if available >= needed then
-                        print("  -> Status: In Stock. Transporting over cable network...")
-                        
+                        -- ROUTING STATE (Plasma Green)
                         local itemTable = { name = itemID, count = needed }
-                        local callSuccess, res, err
-                        
-                        -- Modern 1.21.1 Advanced Peripherals uses the peripheral ID string as the destination argument
-                        callSuccess, res, err = pcall(ae2.exportItem, itemTable, EXPORT_CONTAINER)
-                        
-                        -- Fallback variant parameter order if your exact AP sub-version requires it
+                        local callSuccess, res = pcall(ae2.exportItem, itemTable, EXPORT_CONTAINER)
                         if not callSuccess or not res or res == 0 then
-                            callSuccess, res, err = pcall(ae2.exportItem, EXPORT_CONTAINER, itemTable)
+                            pcall(ae2.exportItem, EXPORT_CONTAINER, itemTable)
                         end
-
-                        if callSuccess and (res and res ~= 0) then
-                            print("  ✔ SUCCESS: Items pushed directly into target barrel!")
-                        else
-                            local finalErr = err or res or "BARREL_REJECTED_TRANSFER"
-                            print("  ❌ EXPORT ERROR: " .. tostring(finalErr))
-                        end
+                        
+                        table.insert(statusLines, {
+                            text = string.format("[>] ROUTING: %s (%d)", cleanName, needed),
+                            color = colors.lime
+                        })
                     else
                         local craftQty = needed - available
-                        print("  -> Status: Shortage. Evaluating craft capability...")
                         
                         if isCraftable then
-                            print("  -> Triggering autocraft for " .. craftQty .. " units...")
+                            -- DEPLETED STATE (Quantum Amber) - Doing a partial dump and auto-crafting remainder
+                            pcall(ae2.craftItem, {name = itemID, count = craftQty})
                             
-                            local pSuccess, cSuccess, cErr = pcall(ae2.craftItem, {name = itemID, count = craftQty})
-                            if pSuccess and cSuccess then
-                                print("  ✔ SUCCESS: Craft order locked into AE2 system.")
-                            else
-                                print("  ❌ CRAFT ERROR: " .. tostring(cErr or cSuccess or "Rejected by AE2"))
-                            end
+                            table.insert(statusLines, {
+                                text = string.format("[!] DEPLETED: %s (+%d C)", cleanName, craftQty),
+                                color = colors.orange
+                            })
                         else
-                            print("  ❌ CRAFT ABORTED: NOT_CRAFTABLE (No encoded AE2 Pattern found)")
+                            -- VOID STATE (Critical Red) - Uncraftable deficit
+                            table.insert(statusLines, {
+                                text = string.format("[X] VOID: %s (%d Mis)", cleanName, craftQty),
+                                color = colors.red
+                            })
                         end
                     end
                 end
             end
         end
     end
+    
+    renderDashboard(statusLines)
 end
 
 while true do
     local globalSuccess, globalErr = pcall(processDemands)
     if not globalSuccess then
+        local errText = "[ERR]: " .. tostring(globalErr):sub(1, 25)
+        if mon then
+            mon.setBackgroundColor(colors.red)
+            mon.setTextColor(colors.white)
+            mon.clear()
+            mon.setCursorPos(1, 2)
+            mon.write("!! KERNEL PANIC !!")
+            mon.setCursorPos(1, 3)
+            mon.write(errText)
+        end
         print("\n[CRITICAL NETWORK EXCEPTION]: " .. tostring(globalErr))
     end
     sleep(REFRESH_RATE)
