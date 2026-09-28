@@ -1,6 +1,6 @@
 -- ATM10 MineColonies to AE2 Bridge Dashboard (Neon Tech Variant)
 -- Optimized for 5x3 Monitor with a Futuristic Dark Base Aesthetic
--- FUZZY MATRIX DISCOVERY CORE: Combined Name Filter and Quantity Extraction
+-- FUZZY MATRIX DISCOVERY CORE: Namespace Mapping and Parent Container Counts
 
 -- ====== CONFIGURATION ======
 local MONITOR_SIDE = "top"         
@@ -54,10 +54,10 @@ local C_SUCCESS = colors.lime        -- Plasma Green (Active/Fulfilling)
 local C_WARN    = colors.orange      -- Quantum Amber (Partial/Pending)
 local C_FAIL    = colors.red         -- Critical Red (Missing/Offline)
 -- ==========================================
--- Deep-inspect item names for fuzzy matrix matching
+-- Deep-inspect item names for fuzzy matrix matching using clean strings
 local function matchSystemItem(colonyItemName, aeInventory)
     if not aeInventory then return nil end
-    -- Hybrid cleanup: strips mod markers and formats into flat lookups
+    -- Normalize the incoming string name by isolating trailing strings and dropping special flags
     local cleanName = colonyItemName:gsub(" ", ""):lower():gsub("^.*:", ""):gsub("_", "")
     
     for _, item in ipairs(aeInventory) do
@@ -107,23 +107,33 @@ local function networkWorker()
                 end
                 
                 for _, req in ipairs(requests) do
+                    -- COMBINATION FIX: Extract exact request number from parent container count field
+                    local needed = req.count or req.needed or 1
+                    
                     for _, item in ipairs(req.items) do
-                        -- Combination read: Use modern string ID tags alongside structural properties
-                        local rawName = item.id or item.display_name or item.name or "Unknown"
-                        local needed = item.count or item.needed or req.count or req.needed or 1
+                        -- Preserve raw registry metadata identifier string for clean system checks
+                        local rawRegistryName = item.name or item.id or item.display_name or "Unknown"
                         
-                        -- Clean formatting for terminal reporting lines
-                        local displayItemName = rawName:gsub("^.*:", ""):gsub("_", " ")
+                        -- Strip trailing custom data blocks or sorting tags safely
+                        if type(rawRegistryName) == "string" then
+                            rawRegistryName = rawRegistryName:match("^[^#]+") or rawRegistryName
+                        end
                         
-                        local systemItem = matchSystemItem(rawName, aeInventory)
+                        -- Process display format string separately (e.g. minecolonies:rack -> Rack)
+                        local displayItemName = rawRegistryName:gsub("^.*:", ""):gsub("_", " ")
+                        displayItemName = displayItemName:sub(1,1):upper() .. displayItemName:sub(2)
+                        
+                        local systemItem = matchSystemItem(rawRegistryName, aeInventory)
                         local status = "Missing"
                         local available = 0
                         
                         if systemItem then
+                            -- Safeguard lookup: pull available stock numbers using item table properties directly
                             available = systemItem.amount or 0
                             
                             if available >= needed then
                                 status = "Exporting"
+                                -- MODERN SIGNATURE: exportItem({name="mod:id", count=X}, direction)
                                 local expSuccess = ae2.exportItem({name = systemItem.name, count = needed}, EXPORT_DIRECTION)
                                 if expSuccess then
                                     addDelivery(displayItemName, needed)
@@ -132,6 +142,7 @@ local function networkWorker()
                             else
                                 status = "Crafting"
                                 local craftQty = needed - available
+                                -- MODERN SIGNATURE: requestCrafting({name="mod:id"}, count)
                                 local craftSuccess, err = ae2.requestCrafting({name = systemItem.name}, craftQty)
                                 if not craftSuccess then
                                     status = "Craft Fail"
