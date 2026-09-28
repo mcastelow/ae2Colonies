@@ -105,12 +105,12 @@ local function networkWorker()
                 end
                 
                 for _, req in ipairs(requests) do
+                    -- Count requirement lives on the parent request object
+                    local needed = req.count or req.needed or 1
+                    
                     for _, item in ipairs(req.items) do
-                        -- OPTION 1: Use .id or .display_name to completely bypass unique GUID strings
                         local itemName = item.id or item.display_name or item.name or "Unknown Item"
-                        local needed = item.count or item.needed or 1
                         
-                        -- Strip item descriptor metadata headers if modern ME Bridge expects flat strings
                         if type(itemName) == "string" then
                             itemName = itemName:match("^[^#]+") or itemName
                         end
@@ -120,12 +120,11 @@ local function networkWorker()
                         local available = 0
                         
                         if systemItem then
-                            local detail = ae2.getItem({name = systemItem.name})
-                            available = detail and detail.amount or 0
+                            -- Directly read available stock amount from our inventory cache
+                            available = systemItem.amount or 0
                             
                             if available >= needed then
                                 status = "Exporting"
-                                -- MODERN SIGNATURE: exportItem({name="mod:id", count=X}, direction)
                                 local expSuccess = ae2.exportItem({name = systemItem.name, count = needed}, EXPORT_DIRECTION)
                                 if expSuccess then
                                     addDelivery(itemName, needed)
@@ -134,7 +133,6 @@ local function networkWorker()
                             else
                                 status = "Crafting"
                                 local craftQty = needed - available
-                                -- MODERN SIGNATURE: requestCrafting({name="mod:id"}, count)
                                 local craftSuccess, err = ae2.requestCrafting({name = systemItem.name}, craftQty)
                                 if not craftSuccess then
                                     status = "Craft Fail"
