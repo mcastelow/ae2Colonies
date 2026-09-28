@@ -1,5 +1,5 @@
 -- ATM10 MineColonies to AE2 Bridge Supply Engine
--- Minimalist 1.21.1 Clean Core
+-- Minimalist 1.21.1 Clean Core (Fixed Crafting Method)
 
 local EXPORT_DIRECTION = "down"
 local REFRESH_RATE = 5
@@ -38,7 +38,7 @@ local function processDemands()
             for _, item in ipairs(req.items) do
                 local itemID = extractItemString(item)
                 if itemID and type(itemID) == "string" then
-                    -- Strip trailing hash data blocks safely
+                    -- Strip trailing hash metadata blocks cleanly
                     itemID = itemID:match("^[^#]+") or itemID
                     
                     print("\n[TARGET] Item: " .. itemID .. " | Demand Qty: " .. needed)
@@ -50,7 +50,6 @@ local function processDemands()
 
                     if available >= needed then
                         print("  -> Status: In Stock. Dispatching item payload...")
-                        -- FIX: AP 0.7.x payload expectations explicitly require the 'id' key instead of 'name'
                         local success, err = pcall(function()
                             return ae2.exportItem({id = itemID, count = needed}, EXPORT_DIRECTION)
                         end)
@@ -63,8 +62,10 @@ local function processDemands()
                     else
                         local craftQty = needed - available
                         print("  -> Status: Shortage. Triggering autocraft for " .. craftQty .. " units...")
+                        
+                        -- FIXED: ATM10 v8.1 relies on craftItem() instead of legacy requestCrafting()
                         local success, err = pcall(function()
-                            return ae2.requestCrafting({id = itemID}, craftQty)
+                            return ae2.craftItem({id = itemID, count = craftQty})
                         end)
                         
                         if success then
