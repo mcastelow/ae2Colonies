@@ -2,8 +2,6 @@
 -- Production Core (ATM10 v8.1 / MC 1.21.1 / AP v0.7.x)
 
 -- ====== CONFIGURATION ======
--- NOTE: If "down" keeps throwing INVENTORY_NOT_FOUND, wrap the barrel with a wired 
--- modem and paste its exact peripheral name here (e.g. "metalbarrels:netherite_barrel_0")
 local EXPORT_TARGET = "down"   
 local REFRESH_RATE = 5
 -- ===========================
@@ -46,7 +44,7 @@ local function processDemands()
                     
                     print("\n[TARGET] Item: " .. itemID .. " | Demand Qty: " .. needed)
                     
-                    -- Native query using verified modern v0.7.x payload constraints
+                    -- Native single-key item tracking check
                     local detail = ae2.getItem({id = itemID})
                     if not detail then detail = ae2.getItem({name = itemID}) end
                     
@@ -56,24 +54,20 @@ local function processDemands()
                     print("  -> Storage Check: Stored Balance = " .. available)
 
                     if available >= needed then
-                        print("  -> Status: In Stock. Executing audited export...")
+                        print("  -> Status: In Stock. Executing clean flat export...")
                         
-                        -- Pass 1: Try lowercase config direction/name
-                        local callSuccess, itemsMoved = pcall(ae2.exportItem, ae2, {id = itemID, count = needed}, EXPORT_TARGET:lower())
-                        if not callSuccess or not itemsMoved or itemsMoved == 0 then
-                            -- Pass 2: Fallback to variant payload identifier
-                            callSuccess, itemsMoved = pcall(ae2.exportItem, ae2, {name = itemID, count = needed}, EXPORT_TARGET:lower())
-                        end
-                        if not callSuccess or not itemsMoved or itemsMoved == 0 then
-                            -- Pass 3: Fallback to uppercase cardinal string matching
-                            callSuccess, itemsMoved = pcall(ae2.exportItem, ae2, {id = itemID, count = needed}, EXPORT_TARGET:upper())
+                        -- CORRECTED: Pass flat primitive variables directly to the method pointer
+                        local callSuccess, res = pcall(ae2.exportItem, itemID, needed, EXPORT_TARGET:lower())
+                        
+                        if not callSuccess or not res or res == 0 then
+                            -- Fallback alternative: try uppercase cardinal direction string
+                            callSuccess, res = pcall(ae2.exportItem, itemID, needed, EXPORT_TARGET:upper())
                         end
                         
-                        -- Verify items moved matching current structural number returns
-                        if callSuccess and type(itemsMoved) == "number" and itemsMoved > 0 then
-                            print("  ✔ SUCCESS: Pulled " .. itemsMoved .. " units to target container!")
+                        if callSuccess and (res == true or (type(res) == "number" and res > 0)) then
+                            print("  ✔ SUCCESS: Pulled items to target container!")
                         else
-                            print("  ❌ EXPORT ERROR: " .. tostring(itemsMoved or "INVENTORY_NOT_FOUND (Check Barrel placement below ME Bridge block)"))
+                            print("  ❌ EXPORT ERROR: " .. tostring(res or "INVENTORY_NOT_FOUND"))
                         end
                     else
                         local craftQty = needed - available
@@ -81,10 +75,9 @@ local function processDemands()
                         
                         if isCraftable then
                             print("  -> Triggering autocraft for " .. craftQty .. " units...")
-                            local callSuccess, craftErr = pcall(ae2.craftItem, ae2, {id = itemID, count = craftQty})
-                            if not callSuccess then
-                                callSuccess, craftErr = pcall(ae2.craftItem, ae2, {name = itemID, count = craftQty})
-                            end
+                            
+                            -- Isolated flat layout method matching contemporary craft parameters
+                            local callSuccess, craftErr = pcall(ae2.craftItem, itemID, craftQty)
                             
                             if callSuccess then
                                 print("  ✔ SUCCESS: Craft order locked into AE2 system.")
