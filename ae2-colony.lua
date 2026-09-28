@@ -1,5 +1,5 @@
 -- ATM10 MineColonies to AE2 Bridge Supply Engine
--- Minimalist 1.21.1 Clean Core (Fixed Crafting Method)
+-- Minimalist 1.21.1 Clean Core (Fixed Crafting Signature)
 
 local EXPORT_DIRECTION = "down"
 local REFRESH_RATE = 5
@@ -63,7 +63,7 @@ local function processDemands()
                         local craftQty = needed - available
                         print("  -> Status: Shortage. Triggering autocraft for " .. craftQty .. " units...")
                         
-                        -- FIXED: ATM10 v8.1 relies on craftItem() instead of legacy requestCrafting()
+                        -- FIX: craftItem expects ({id, count}) as arg 1, and an optional CPU string as arg 2
                         local success, err = pcall(function()
                             return ae2.craftItem({id = itemID, count = craftQty})
                         end)
