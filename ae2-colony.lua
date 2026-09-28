@@ -1,5 +1,5 @@
 -- ATM10 MineColonies to AE2 Bridge Supply Engine
--- Production Core (ATM10 v8.1 / MC 1.21.1 / Cyber-Grid Industrial Matrix Edition)
+-- Production Core (ATM10 v8.1 / MC 1.21.1 / ASCII Cyber-Grid Edition)
 
 -- ====== CONFIGURATION ======
 local EXPORT_CONTAINER = "sophisticatedstorage:barrel_0"   
@@ -58,7 +58,7 @@ local function renderDashboard(statusLines)
     print("=== LOGISTICS RADAR OPERATIONAL ===")
     for _, line in ipairs(statusLines) do print(line.text) end
 
-    -- 2. Futuristic Monitor System Overlay
+    -- 2. ASCII Monitor Rendering Layout
     if mon then
         mon.setTextScale(1.0) 
         mon.clear()
@@ -71,15 +71,14 @@ local function renderDashboard(statusLines)
         
         local pulse = tickState and "o" or " "
         tickState = not tickState
-        local headerText = "─── SYS MATRIX [" .. pulse .. "] ───"
+        local headerText = "--- SYS MATRIX [" .. pulse .. "] ---"
         local headerPad = math.max(1, math.floor((w - #headerText) / 2))
-        mon.write(string.rep("┌", headerPad - 1) .. headerText .. string.rep("┐", w - (headerPad + #headerText) + 1))
+        mon.write(string.rep("+", headerPad - 1) .. headerText .. string.rep("+", w - (headerPad + #headerText) + 1))
         
-        -- Row 2: Balanced Live LED Grid Layout
-        -- Flashing status nodes look like real hardware component panels
+        -- Row 2: Live LED Grid Layout
         mon.setCursorPos(1, 2)
         mon.setTextColor(colors.gray)
-        mon.write("│ ")
+        mon.write("| ")
         
         mon.setTextColor(colors.lightGray)
         mon.write("AP")
@@ -105,33 +104,32 @@ local function renderDashboard(statusLines)
         
         mon.setCursorPos(w, 2)
         mon.setTextColor(colors.gray)
-        mon.write("│")
+        mon.write("|")
 
         -- Row 3 & 4: Heavy Double Frame Dividers & Table Headers
         mon.setCursorPos(1, 3)
         mon.setTextColor(colors.gray)
-        mon.write("╞══════════════════════════════════╡")
+        mon.write("+==================================+")
         
         mon.setCursorPos(1, 4)
         mon.setTextColor(colors.cyan)
-        mon.write("│ ITEM             │ QTY  │ STATE  │")
+        mon.write("| ITEM             | QTY  | STATE  |")
         
         mon.setCursorPos(1, 5)
         mon.setTextColor(colors.gray)
-        mon.write("├──────────────────────────────────┤")
+        mon.write("+----------------------------------+")
         
         -- Rows 6+: Dynamic Scrolling Data Stream 
         local currentLine = 6
         if #statusLines == 0 then
             mon.setCursorPos(1, currentLine)
             mon.setTextColor(colors.blue)
-            mon.write("│ · MATRIX IDLE: STREAM STABLE    │")
+            mon.write("| . MATRIX IDLE: STREAM STABLE    |")
             
-            -- Fill subsequent space with empty structural walls
             for r = currentLine + 1, h - 1 do
                 mon.setCursorPos(1, r)
                 mon.setTextColor(colors.gray)
-                mon.write("│                                  │")
+                mon.write("|                                  |")
             end
         else
             if scrollIndex > #statusLines then scrollIndex = 1 end
@@ -153,7 +151,7 @@ local function renderDashboard(statusLines)
             for r = currentLine, h - 1 do
                 mon.setCursorPos(1, r)
                 mon.setTextColor(colors.gray)
-                mon.write("│                                  │")
+                mon.write("|                                  |")
             end
             
             if #statusLines > SCROLL_LINES_PER_PAGE then
@@ -166,7 +164,7 @@ local function renderDashboard(statusLines)
         -- Final Row: Lower Closure Frame Bracket
         mon.setCursorPos(1, h)
         mon.setTextColor(colors.gray)
-        mon.write("└" .. string.rep("─", w - 2) .. "┘")
+        mon.write("+" .. string.rep("-", w - 2) .. "+")
     end
 end
 
@@ -209,7 +207,6 @@ local function processDemands()
         local available = detail and (detail.count or detail.amount) or 0
         local isCraftable = detail and detail.isCraftable or false
 
-        -- Balanced text truncation for industrial layout frame slots
         local colItem = padRight(cleanName, 16)
 
         if available >= totalNeeded then
@@ -221,7 +218,7 @@ local function processDemands()
             end
             
             local colQty   = padRight(totalNeeded, 4)
-            local tableRow = string.format("│ · %s │ %s │ ROUTE  │", colItem, colQty)
+            local tableRow = string.format("| . %s | %s | ROUTE  |", colItem, colQty)
             table.insert(statusLines, { text = tableRow, color = colors.lime })
         else
             local craftQty = totalNeeded - available
@@ -231,11 +228,11 @@ local function processDemands()
                 -- CRAFTING (Quantum Amber)
                 pcall(ae2.craftItem, {name = itemID, count = craftQty})
                 
-                local tableRow = string.format("│ · %s │ %s │ CRAFT  │", colItem, colQty)
+                local tableRow = string.format("| . %s | %s | CRAFT  |", colItem, colQty)
                 table.insert(statusLines, { text = tableRow, color = colors.orange })
             else
                 -- MISSING (Critical Missing Red)
-                local tableRow = string.format("│ · %s │ %s │ VOID   │", colItem, colQty)
+                local tableRow = string.format("| . %s | %s | VOID   |", colItem, colQty)
                 table.insert(statusLines, { text = tableRow, color = colors.red })
             end
         end
@@ -254,13 +251,13 @@ while true do
             mon.setTextColor(colors.red)
             mon.clear()
             mon.setCursorPos(1, 2)
-            mon.write("┌──────────────────────────────────┐")
+            mon.write("+----------------------------------+")
             mon.setCursorPos(1, 3)
-            mon.write("│       !! CRITICAL ERROR !!       │")
+            mon.write("|       !! CRITICAL ERROR !!       |")
             mon.setCursorPos(1, 4)
-            mon.write("│ " .. padRight(errText, 32) .. " │")
+            mon.write("| " .. padRight(errText, 32) .. " |")
             mon.setCursorPos(1, 5)
-            mon.write("└──────────────────────────────────┘")
+            mon.write("+----------------------------------+")
         end
         print("\n[CRITICAL NETWORK EXCEPTION]: " .. tostring(globalErr))
     end
