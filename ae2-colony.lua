@@ -1,6 +1,6 @@
 -- ATM10 MineColonies to AE2 Bridge Dashboard (Neon Tech Variant)
 -- Optimized for 5x3 Monitor with a Futuristic Dark Base Aesthetic
--- DIAGNOSTIC BUILD: Terminal-Scrolled String Matching Analysis Loop
+-- FIX BUILD: Namespace-Aligned Strict Dual Match Matrix Core
 
 -- ====== CONFIGURATION ======
 local MONITOR_SIDE = "top"         
@@ -60,19 +60,22 @@ local function matchSystemItem(colonyItemName, aeInventory)
     
     local target = colonyItemName:lower():gsub(" ", "")
     
-    -- Strict Match Pass
+    -- PASS 1: Strict Raw Literal Equivalence Check
     for _, item in ipairs(aeInventory) do
         if item.name and item.name:lower():gsub(" ", "") == target then
             return item
         end
     end
     
-    -- Sub-Tag Fallback Match Pass
+    -- PASS 2: Stripped Sub-Tag Namespace Isolation Fallback
     local targetTag = target:match(":([^:]+)$") or target
     for _, item in ipairs(aeInventory) do
-        local invTag = item.name:lower():match(":([^:]+)$") or item.name:lower()
-        if invTag == targetTag then
-            return item
+        if item.name then
+            local invName = item.name:lower():gsub(" ", "")
+            local invTag = invName:match(":([^:]+)$") or invName
+            if invTag == targetTag then
+                return item
+            end
         end
     end
     
@@ -80,7 +83,6 @@ local function matchSystemItem(colonyItemName, aeInventory)
 end
 
 local function networkWorker()
-    -- Prepare terminal for rolling diagnostic records
     term.clear()
     term.setCursorPos(1,1)
     print("=== LOGISTICS KERNEL TERMINAL LOGGER ACTIVE ===")
@@ -111,7 +113,6 @@ local function networkWorker()
                 local tempRequests = {}
                 
                 print(string.format("\n--- NETWORK POLL MATRIX [%s] ---", os.date("%H:%M:%S")))
-                print("Polled active Colony request batches: " .. #requests)
                 
                 local aeInventory = {}
                 local listSuccess, listData = pcall(function() return ae2.listItems() or ae2.getItems() end)
@@ -120,6 +121,7 @@ local function networkWorker()
                 end
                 
                 for _, req in ipairs(requests) do
+                    -- ARCHITECTURAL RETROSPECTIVE COMPLIANCE: Pull count from parent object level
                     local needed = req.count or req.needed or 1
                     
                     for _, item in ipairs(req.items) do
@@ -129,10 +131,10 @@ local function networkWorker()
                             rawRegistryName = rawRegistryName:match("^[^#]+") or rawRegistryName
                         end
                         
+                        -- Generate dynamic display names safely for screen layout aesthetics
                         local displayItemName = rawRegistryName:gsub("^.*:", ""):gsub("_", " ")
                         displayItemName = displayItemName:sub(1,1):upper() .. displayItemName:sub(2)
                         
-                        -- CRITICAL DEBUGLOG: Print exact input structure to computer terminal
                         print(string.format("[TRYING] Colony ID: '%s' | Qty: %d", tostring(rawRegistryName), needed))
                         
                         local systemItem = matchSystemItem(rawRegistryName, aeInventory)
@@ -141,8 +143,7 @@ local function networkWorker()
                         
                         if systemItem then
                             available = systemItem.amount or 0
-                            -- CRITICAL DEBUGLOG: Confirm successful match properties on terminal
-                            print(string.format("  -> MATCH FOUND! AE2 Registry: '%s' | Stock: %d", tostring(systemItem.name), available))
+                            print(string.format("  -> MATCH CONFIRMED! AE2 ID: '%s' | Stored: %d", tostring(systemItem.name), available))
                             
                             if available >= needed then
                                 status = "Exporting"
@@ -161,8 +162,7 @@ local function networkWorker()
                                 end
                             end
                         else
-                            -- CRITICAL DEBUGLOG: Explicit failure note on terminal
-                            print("  -> ERROR: No match inside AE2 Registry arrays.")
+                            print("  -> ERROR: No match found inside AE2 Registry inventory array.")
                             addLog("No AE2 item map for: " .. displayItemName)
                         end
                         
