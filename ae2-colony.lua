@@ -1,5 +1,5 @@
 -- ATM10 MineColonies to AE2 Bridge Supply Engine
--- Minimalist 1.21.1 Clean Core (Fixed Crafting Signature)
+-- Minimalist 1.21.1 Clean Core (Robust Export Patch)
 
 local EXPORT_DIRECTION = "down"
 local REFRESH_RATE = 5
@@ -50,23 +50,37 @@ local function processDemands()
 
                     if available >= needed then
                         print("  -> Status: In Stock. Dispatching item payload...")
-                        local success, err = pcall(function()
-                            return ae2.exportItem({id = itemID, count = needed}, EXPORT_DIRECTION)
+                        
+                        -- DOUBLE-PASS EXPORT: Try both namespaced fields to resolve Java type errors
+                        local success, res = pcall(function()
+                            return ae2.exportItem({name = itemID, count = needed}, EXPORT_DIRECTION)
                         end)
                         
-                        if success then
-                            print("  ✔ SUCCESS: Pulled to chest!")
+                        if not success or not res or res == 0 then
+                            success, res = pcall(function()
+                                return ae2.exportItem({id = itemID, count = needed}, EXPORT_DIRECTION)
+                            end)
+                        end
+                        
+                        if success and type(res) == "number" and res > 0 then
+                            print("  ✔ SUCCESS: Pulled " .. res .. " units to chest!")
                         else
-                            print("  ❌ EXPORT ERROR: " .. tostring(err or "Obstructed"))
+                            print("  ❌ EXPORT ERROR: " .. tostring(res or "No item moved / Obstructed"))
                         end
                     else
                         local craftQty = needed - available
                         print("  -> Status: Shortage. Triggering autocraft for " .. craftQty .. " units...")
                         
-                        -- FIX: craftItem expects ({id, count}) as arg 1, and an optional CPU string as arg 2
+                        -- DOUBLE-PASS CRAFTING: Try both configuration maps to ensure CPU validation passes
                         local success, err = pcall(function()
-                            return ae2.craftItem({id = itemID, count = craftQty})
+                            return ae2.craftItem({name = itemID, count = craftQty})
                         end)
+                        
+                        if not success then
+                            success, err = pcall(function()
+                                return ae2.craftItem({id = itemID, count = craftQty})
+                            end)
+                        end
                         
                         if success then
                             print("  ✔ SUCCESS: Craft order locked into AE2.")
