@@ -1,19 +1,12 @@
 -- ATM10 MineColonies to AE2 Bridge Supply Engine
--- Production Core (ATM10 v8.1 / MC 1.21.1 / Wired Network + Cyberpunk UI Edition)
+-- Production Core (ATM10 v8.1 / MC 1.21.1 / Infrastructure Grid & Table Edition)
 
 -- ====== CONFIGURATION ======
 local EXPORT_CONTAINER = "sophisticatedstorage:barrel_0"   
 local REFRESH_RATE = 5
 -- ===========================
 
-local colony = peripheral.find("colony_integrator")
-local ae2 = peripheral.find("me_bridge")
-local mon = peripheral.find("monitor")
-
-if not colony then error("[FATAL] colony_integrator not detected on the network!") end
-if not ae2 then error("[FATAL] me_bridge not detected on the network!") end
-
--- Global tick tracker for the visual heartbeat animation
+-- Global heartbeat tick tracker
 local tickState = true
 
 local function extractItemString(itemObj)
@@ -27,56 +20,101 @@ local function extractItemString(itemObj)
     return nil
 end
 
+-- Helper function to perfectly pad text columns
+local function padRight(text, length)
+    text = tostring(text)
+    if #text >= length then
+        return text:sub(1, length - 2) .. ".."
+    end
+    return text .. string.rep(" ", length - #text)
+end
+
 local function renderDashboard(statusLines)
-    -- Render to standard terminal console
+    -- Interrogate peripheral presence on the wire live per-tick
+    local colony = peripheral.find("colony_integrator")
+    local ae2 = peripheral.find("me_bridge")
+    local barrel = peripheral.wrap(EXPORT_CONTAINER)
+    local mon = peripheral.find("monitor")
+
+    -- 1. Console Printing Fallback
     term.clear()
     term.setCursorPos(1,1)
-    print("=== LOGISTICS EVENT TIMELINE: " .. os.date("%H:%M:%S") .. " ===")
+    print("=== LOGISTICS MATRIX: " .. os.date("%H:%M:%S") .. " ===")
+    print(string.format("NET: AP[%s] ME[%s] OUT[%s]", colony and "ON" or "OFF", ae2 and "ON" or "OFF", barrel and "ON" or "OFF"))
+    print("| ITEM            | QTY | STATUS   |")
     for _, line in ipairs(statusLines) do
         print(line.text)
     end
 
-    -- Render to Advanced Monitor ("monitor_0")
+    -- 2. Advanced Monitor Rendering Layout
     if mon then
-        mon.setTextScale(0.5) -- Small text for high scannability on a 5x3 screen
+        mon.setTextScale(0.5)
         mon.clear()
-        
         local w, h = mon.getSize()
         
-        -- Header Bar Background (Deep Slate Blue)
+        -- Row 1: Header Ticker Ribbon
         mon.setBackgroundColor(colors.gray)
         mon.setTextColor(colors.white)
         mon.setCursorPos(1, 1)
         mon.clearLine()
-        
-        -- Heartbeat ticker animation alternating between [ * ] and [   ]
         local pulse = tickState and "*" or " "
         tickState = not tickState
+        mon.write(" LOGISTICS SYSTEM HUB [" .. pulse .. "] " .. os.date("%H:%M:%S"))
         
-        local headerText = " LOGISTICS MATRIX [" .. pulse .. "] " .. os.date("%H:%M:%S")
-        mon.write(headerText)
-        
-        -- Reset background for body content
+        -- Row 2: Live Connection Infrastructure Grid
         mon.setBackgroundColor(colors.black)
+        mon.setCursorPos(1, 2)
+        mon.setTextColor(colors.lightGray)
+        mon.write("NET STATUS: ")
         
-        local currentLine = 3
-        for _, line in ipairs(statusLines) do
-            if currentLine > h then break end -- Prevent screen overflow
-            
+        -- Colony Integrator Node
+        mon.setTextColor(colony and colors.lime or colors.red)
+        mon.write("AP[" .. (colony and "ON" or "OFF") .. "] ")
+        -- ME Bridge Node
+        mon.setTextColor(ae2 and colors.lime or colors.red)
+        mon.write("ME[" .. (ae2 and "ON" or "OFF") .. "] ")
+        -- Target Distribution Barrel Node
+        mon.setTextColor(barrel and colors.lime or colors.red)
+        mon.write("OUT[" .. (barrel and "ON" or "OFF") .. "]")
+
+        -- Row 4: Static Table Column Dividers
+        mon.setCursorPos(1, 4)
+        mon.setTextColor(colors.yellow)
+        -- Sized cleanly for typical 5x3 Advanced Monitor aspect layouts
+        mon.write("| ITEM            | QTY | STATUS   |")
+        
+        -- Rows 5+: Tabular Stream Population
+        local currentLine = 5
+        if #statusLines == 0 then
             mon.setCursorPos(1, currentLine)
-            mon.setTextColor(line.color or colors.white)
-            mon.write(line.text)
-            currentLine = currentLine + 1
+            mon.setTextColor(colors.lightBlue)
+            mon.write("| [Matrix Idle]   | --  | COMPLETE |")
+        else
+            for _, line in ipairs(statusLines) do
+                if currentLine > h then break end
+                mon.setCursorPos(1, currentLine)
+                mon.setTextColor(line.color or colors.white)
+                mon.write(line.text)
+                currentLine = currentLine + 1
+            end
         end
     end
 end
 
 local function processDemands()
     local statusLines = {}
-    local requests = colony.getRequests()
     
+    local colony = peripheral.find("colony_integrator")
+    local ae2 = peripheral.find("me_bridge")
+    
+    -- Graceful error suppression so missing wires don't completely crash the runtime loop
+    if not colony or not ae2 then
+        renderDashboard(statusLines)
+        return
+    end
+
+    local requests = colony.getRequests()
     if not requests or #requests == 0 then
-        table.insert(statusLines, {text = ">> MATRIX IDLE: Demands satisfied.", color = colors.lightBlue})
         renderDashboard(statusLines)
         return
     end
@@ -89,11 +127,8 @@ local function processDemands()
                 if itemID and type(itemID) == "string" then
                     itemID = itemID:match("^[^#]+") or itemID
                     
-                    -- Strip mod prefixes (e.g. 'minecraft:oak_log' -> 'oak_log') and cap length
+                    -- Strip namespace and format string safely
                     local cleanName = itemID:gsub("^[^:]+:", "")
-                    if #cleanName > 15 then
-                        cleanName = cleanName:sub(1, 13) .. ".."
-                    end
                     
                     local detail = ae2.getItem({id = itemID})
                     if not detail then detail = ae2.getItem({name = itemID}) end
@@ -109,27 +144,26 @@ local function processDemands()
                             pcall(ae2.exportItem, EXPORT_CONTAINER, itemTable)
                         end
                         
-                        table.insert(statusLines, {
-                            text = string.format("[>] ROUTING: %s (%d)", cleanName, needed),
-                            color = colors.lime
-                        })
+                        local colItem   = padRight(cleanName, 15)
+                        local colQty    = padRight(needed, 3)
+                        local tableRow  = string.format("| %s | %s | ROUTING  |", colItem, colQty)
+                        
+                        table.insert(statusLines, { text = tableRow, color = colors.lime })
                     else
                         local craftQty = needed - available
+                        local colItem  = padRight(cleanName, 15)
+                        local colQty   = padRight(craftQty, 3)
                         
                         if isCraftable then
-                            -- DEPLETED STATE (Quantum Amber) - Doing a partial dump and auto-crafting remainder
+                            -- DEPLETED STATE (Quantum Amber)
                             pcall(ae2.craftItem, {name = itemID, count = craftQty})
                             
-                            table.insert(statusLines, {
-                                text = string.format("[!] DEPLETED: %s (+%d C)", cleanName, craftQty),
-                                color = colors.orange
-                            })
+                            local tableRow = string.format("| %s | %s | CRAFTING |", colItem, colQty)
+                            table.insert(statusLines, { text = tableRow, color = colors.orange })
                         else
-                            -- VOID STATE (Critical Red) - Uncraftable deficit
-                            table.insert(statusLines, {
-                                text = string.format("[X] VOID: %s (%d Mis)", cleanName, craftQty),
-                                color = colors.red
-                            })
+                            -- VOID STATE (Critical Red)
+                            local tableRow = string.format("| %s | %s | MISSING  |", colItem, colQty)
+                            table.insert(statusLines, { text = tableRow, color = colors.red })
                         end
                     end
                 end
@@ -144,6 +178,7 @@ while true do
     local globalSuccess, globalErr = pcall(processDemands)
     if not globalSuccess then
         local errText = "[ERR]: " .. tostring(globalErr):sub(1, 25)
+        local mon = peripheral.find("monitor")
         if mon then
             mon.setBackgroundColor(colors.red)
             mon.setTextColor(colors.white)
