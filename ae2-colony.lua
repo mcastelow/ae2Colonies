@@ -1,4 +1,4 @@
--- 1
+-- 2
 -- ATM10 MineColonies to AE2 Bridge Supply Engine
 -- Production Core (ATM10 v8.1 / MC 1.21.1 / AP v0.7.x)
 
@@ -55,20 +55,39 @@ local function processDemands()
                     print("  -> Storage Check: Stored Balance = " .. available)
 
                     if available >= needed then
-                        print("  -> Status: In Stock. Executing clean export...")
+                        print("  -> Status: In Stock. Executing safe multi-signature export...")
                         
-                        -- FIXED: Wrap item criteria into a table (Map) to prevent "map expected, got number"
-                        local callSuccess, res, err = pcall(ae2.exportItem, EXPORT_TARGET:lower(), {name = itemID, count = needed})
+                        local callSuccess, res, err
+                        local itemTable = { name = itemID, count = needed }
                         
-                        -- Dynamic fallback sequence for old AP versions if direction parameters are flipped
-                        if not callSuccess or res == 0 then
-                            callSuccess, res, err = pcall(ae2.exportItem, {name = itemID, count = needed}, EXPORT_TARGET:lower())
+                        -- SIGNATURE TRY 1: Modern AP 1.21.1 standard (itemTable, direction)
+                        callSuccess, res, err = pcall(ae2.exportItem, itemTable, EXPORT_TARGET:lower())
+                        
+                        -- SIGNATURE TRY 2: Alternative build format (direction, itemTable)
+                        if not callSuccess or not res or res == 0 then
+                            callSuccess, res, err = pcall(ae2.exportItem, EXPORT_TARGET:lower(), itemTable)
                         end
                         
+                        -- SIGNATURE TRY 3: Secondary direction token parsing ("bottom" instead of "down")
+                        if not callSuccess or not res or res == 0 then
+                            callSuccess, res, err = pcall(ae2.exportItem, itemTable, "bottom")
+                        end
+                        
+                        -- SIGNATURE TRY 4: Flipped secondary token parsing ("bottom", itemTable)
+                        if not callSuccess or not res or res == 0 then
+                            callSuccess, res, err = pcall(ae2.exportItem, "bottom", itemTable)
+                        end
+                        
+                        -- SIGNATURE TRY 5: Broad fallback targeting peripheral network string just in case
+                        if not callSuccess or not res or res == 0 then
+                            callSuccess, res, err = pcall(ae2.exportItemToPeripheral, itemTable, EXPORT_TARGET)
+                        end
+
                         if callSuccess and (res and res ~= 0) then
                             print("  ✔ SUCCESS: Pulled items to target container!")
                         else
-                            print("  ❌ EXPORT ERROR: " .. tostring(res or err or "INVENTORY_NOT_FOUND"))
+                            local finalErr = err or res or "INVENTORY_NOT_FOUND"
+                            print("  ❌ EXPORT ERROR: " .. tostring(finalErr))
                         end
                     else
                         local craftQty = needed - available
