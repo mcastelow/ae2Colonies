@@ -1,6 +1,6 @@
 -- ATM10 MineColonies to AE2 Bridge Dashboard (Neon Tech Variant)
 -- Optimized for 5x3 Monitor with a Futuristic Dark Base Aesthetic
--- FIX BUILD: Namespace-Aligned Strict Dual Match Matrix Core
+-- ADVANCED DEBUG BUILD: Triple-Pass Matrix Inspector Core
 
 -- ====== CONFIGURATION ======
 local MONITOR_SIDE = "top"         
@@ -54,31 +54,31 @@ local C_SUCCESS = colors.lime        -- Plasma Green (Active/Fulfilling)
 local C_WARN    = colors.orange      -- Quantum Amber (Partial/Pending)
 local C_FAIL    = colors.red         -- Critical Red (Missing/Offline)
 -- ==========================================
--- Deep-inspect namespaced item names for precise inventory matching
+-- Triple-pass lookup targeting every possible variable property in ATM10 Advanced Peripherals
 local function matchSystemItem(colonyItemName, aeInventory)
     if not aeInventory or not colonyItemName then return nil end
     
     local target = colonyItemName:lower():gsub(" ", "")
-    
-    -- PASS 1: Strict Raw Literal Equivalence Check
-    for _, item in ipairs(aeInventory) do
-        if item.name and item.name:lower():gsub(" ", "") == target then
-            return item
-        end
-    end
-    
-    -- PASS 2: Stripped Sub-Tag Namespace Isolation Fallback
     local targetTag = target:match(":([^:]+)$") or target
+    
     for _, item in ipairs(aeInventory) do
-        if item.name then
-            local invName = item.name:lower():gsub(" ", "")
-            local invTag = invName:match(":([^:]+)$") or invName
-            if invTag == targetTag then
+        -- Extract any string identifier from item tables (name, id, fingerprint, display_name)
+        local aeRaw = item.name or item.id or item.fingerprint or (type(item.item) == "table" and item.item.id) or ""
+        if type(aeRaw) == "string" and aeRaw ~= "" then
+            local aeClean = aeRaw:lower():gsub(" ", "")
+            
+            -- PASS 1: Strict Raw Equivalent Match
+            if aeClean == target then
+                return item
+            end
+            
+            -- PASS 2: Stripped Mod Namespace Tag Match
+            local aeTag = aeClean:match(":([^:]+)$") or aeClean
+            if aeTag == targetTag then
                 return item
             end
         end
     end
-    
     return nil
 end
 
@@ -115,23 +115,34 @@ local function networkWorker()
                 print(string.format("\n--- NETWORK POLL MATRIX [%s] ---", os.date("%H:%M:%S")))
                 
                 local aeInventory = {}
-                local listSuccess, listData = pcall(function() return ae2.listItems() or ae2.getItems() end)
+                local listSuccess, listData = pcall(function() return ae2.listItems() or ae2.getItems() or {} end)
                 if listSuccess and listData then
                     aeInventory = listData
+                    
+                    -- ADVANCED DEBUGGER BLOCK: Print structure of first 2 items found in AE2 storage array
+                    print(">> AE2 STRUCTURE DUMP (First 2 available items):")
+                    local dumpCount = 0
+                    for k, v in pairs(aeInventory) do
+                        if dumpCount < 2 then
+                            print(string.format("  [%d] raw name=%s, id=%s, amount=%s, count=%s", 
+                                dumpCount + 1, tostring(v.name), tostring(v.id), tostring(v.amount), tostring(v.count)))
+                            dumpCount = dumpCount + 1
+                        end
+                    end
+                else
+                    print(">> ERROR: Failed to poll AE2 Inventory entirely.")
                 end
                 
                 for _, req in ipairs(requests) do
-                    -- ARCHITECTURAL RETROSPECTIVE COMPLIANCE: Pull count from parent object level
                     local needed = req.count or req.needed or 1
                     
                     for _, item in ipairs(req.items) do
-                        local rawRegistryName = item.name or item.id or "Unknown"
+                        local rawRegistryName = item.id or item.name or item.display_name or "Unknown"
                         
                         if type(rawRegistryName) == "string" then
                             rawRegistryName = rawRegistryName:match("^[^#]+") or rawRegistryName
                         end
                         
-                        -- Generate dynamic display names safely for screen layout aesthetics
                         local displayItemName = rawRegistryName:gsub("^.*:", ""):gsub("_", " ")
                         displayItemName = displayItemName:sub(1,1):upper() .. displayItemName:sub(2)
                         
@@ -142,12 +153,13 @@ local function networkWorker()
                         local available = 0
                         
                         if systemItem then
-                            available = systemItem.amount or 0
-                            print(string.format("  -> MATCH CONFIRMED! AE2 ID: '%s' | Stored: %d", tostring(systemItem.name), available))
+                            -- Look up volume across count/amount keys interchangeably
+                            available = systemItem.amount or systemItem.count or 0
+                            print(string.format("  -> MATCH CONFIRMED! Stored Volume: %d", available))
                             
                             if available >= needed then
                                 status = "Exporting"
-                                local expSuccess = ae2.exportItem({name = systemItem.name, count = needed}, EXPORT_DIRECTION)
+                                local expSuccess = ae2.exportItem({name = rawRegistryName, count = needed}, EXPORT_DIRECTION)
                                 if expSuccess then
                                     addDelivery(displayItemName, needed)
                                     addLog("Exported " .. needed .. "x " .. displayItemName)
@@ -155,14 +167,14 @@ local function networkWorker()
                             else
                                 status = "Crafting"
                                 local craftQty = needed - available
-                                local craftSuccess, err = ae2.requestCrafting({name = systemItem.name}, craftQty)
+                                local craftSuccess, err = ae2.requestCrafting({name = rawRegistryName}, craftQty)
                                 if not craftSuccess then
                                     status = "Craft Fail"
                                     addLog("Craft Fail: " .. (err or "No CPU"))
                                 end
                             end
                         else
-                            print("  -> ERROR: No match found inside AE2 Registry inventory array.")
+                            print("  -> ERROR: No match found inside AE2 Registry.")
                             addLog("No AE2 item map for: " .. displayItemName)
                         end
                         
