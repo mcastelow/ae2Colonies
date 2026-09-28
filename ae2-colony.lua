@@ -1,8 +1,12 @@
 -- ATM10 MineColonies to AE2 Bridge Supply Engine
--- Fixed for 1.21.1+ ME Bridge Signatures
+-- Production Core (ATM10 v8.1 / MC 1.21.1 / AP v0.7.x)
 
-local EXPORT_DIRECTION = "down"
+-- ====== CONFIGURATION ======
+-- NOTE: If "down" keeps throwing INVENTORY_NOT_FOUND, wrap the barrel with a wired 
+-- modem and paste its exact peripheral name here (e.g. "metalbarrels:netherite_barrel_0")
+local EXPORT_TARGET = "down"   
 local REFRESH_RATE = 5
+-- ===========================
 
 local colony = peripheral.find("colony_integrator")
 local ae2 = peripheral.find("me_bridge")
@@ -38,48 +42,57 @@ local function processDemands()
             for _, item in ipairs(req.items) do
                 local itemID = extractItemString(item)
                 if itemID and type(itemID) == "string" then
-                    -- Strip trailing NBT hash identifiers cleanly
                     itemID = itemID:match("^[^#]+") or itemID
                     
                     print("\n[TARGET] Item: " .. itemID .. " | Demand Qty: " .. needed)
                     
-                    local detail = ae2.getItem({name = itemID})
+                    -- Native query using verified modern v0.7.x payload constraints
+                    local detail = ae2.getItem({id = itemID})
+                    if not detail then detail = ae2.getItem({name = itemID}) end
+                    
                     local available = detail and (detail.count or detail.amount) or 0
+                    local isCraftable = detail and detail.isCraftable or false
+                    
                     print("  -> Storage Check: Stored Balance = " .. available)
 
                     if available >= needed then
-                        print("  -> Status: In Stock. Executing export...")
+                        print("  -> Status: In Stock. Executing audited export...")
                         
-                        -- FIX 1: Try the new 1.21.1+ signature first (Direction, Item Table)
-                        local success, res, err = pcall(ae2.exportItem, EXPORT_DIRECTION, {name = itemID, count = needed})
-                        
-                        -- Fallback to old signature if the first one failed due to argument typing
-                        if not success or res == 0 then
-                            success, res, err = pcall(ae2.exportItem, {name = itemID, count = needed}, EXPORT_DIRECTION)
+                        -- Pass 1: Try lowercase config direction/name
+                        local callSuccess, itemsMoved = pcall(ae2.exportItem, ae2, {id = itemID, count = needed}, EXPORT_TARGET:lower())
+                        if not callSuccess or not itemsMoved or itemsMoved == 0 then
+                            -- Pass 2: Fallback to variant payload identifier
+                            callSuccess, itemsMoved = pcall(ae2.exportItem, ae2, {name = itemID, count = needed}, EXPORT_TARGET:lower())
+                        end
+                        if not callSuccess or not itemsMoved or itemsMoved == 0 then
+                            -- Pass 3: Fallback to uppercase cardinal string matching
+                            callSuccess, itemsMoved = pcall(ae2.exportItem, ae2, {id = itemID, count = needed}, EXPORT_TARGET:upper())
                         end
                         
-                        -- Double fallback check with alternative ID property
-                        if not success or res == 0 then
-                            pcall(ae2.exportItem, EXPORT_DIRECTION, {id = itemID, count = needed})
-                        end
-                        
-                        if success and (res and res ~= 0) then
-                            print("  ✔ SUCCESS: Pulled items into delivery chest!")
+                        -- Verify items moved matching current structural number returns
+                        if callSuccess and type(itemsMoved) == "number" and itemsMoved > 0 then
+                            print("  ✔ SUCCESS: Pulled " .. itemsMoved .. " units to target container!")
                         else
-                            print("  ❌ EXPORT ERROR: " .. tostring(res or err or "No item moved / Obstructed"))
+                            print("  ❌ EXPORT ERROR: " .. tostring(itemsMoved or "INVENTORY_NOT_FOUND (Check Barrel placement below ME Bridge block)"))
                         end
                     else
                         local craftQty = needed - available
-                        print("  -> Status: Shortage. Executing crafting call for " .. craftQty .. " units...")
+                        print("  -> Status: Shortage. Evaluating craft capability...")
                         
-                        -- FIX 2: Evaluate the true return value of craftItem, not just pcall's status
-                        local pcallSuccess, craftSuccess, craftErr = pcall(ae2.craftItem, {name = itemID, count = craftQty})
-                        
-                        if pcallSuccess and craftSuccess then
-                            print("  ✔ SUCCESS: Craft order accepted by AE2 system.")
+                        if isCraftable then
+                            print("  -> Triggering autocraft for " .. craftQty .. " units...")
+                            local callSuccess, craftErr = pcall(ae2.craftItem, ae2, {id = itemID, count = craftQty})
+                            if not callSuccess then
+                                callSuccess, craftErr = pcall(ae2.craftItem, ae2, {name = itemID, count = craftQty})
+                            end
+                            
+                            if callSuccess then
+                                print("  ✔ SUCCESS: Craft order locked into AE2 system.")
+                            else
+                                print("  ❌ CRAFT ERROR: " .. tostring(craftErr or "Stalled"))
+                            end
                         else
-                            local actualError = craftErr or craftSuccess or "No Pattern, missing CPU, or no co-processors available"
-                            print("  ❌ CRAFT ERROR: " .. tostring(actualError))
+                            print("  ❌ CRAFT ABORTED: NOT_CRAFTABLE (No encoded AE2 Pattern found)")
                         end
                     end
                 end
