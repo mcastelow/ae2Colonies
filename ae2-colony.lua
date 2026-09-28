@@ -1,6 +1,6 @@
 -- ATM10 MineColonies to AE2 Bridge Dashboard (Neon Tech Variant)
 -- Optimized for 5x3 Monitor with a Futuristic Dark Base Aesthetic
--- ADVANCED DEBUG BUILD: Triple-Pass Matrix Inspector Core
+-- ADVANCED BUILD: File-Logged Isolated Registry Diagnostic Build
 
 -- ====== CONFIGURATION ======
 local MONITOR_SIDE = "top"         
@@ -62,7 +62,7 @@ local function matchSystemItem(colonyItemName, aeInventory)
     local targetTag = target:match(":([^:]+)$") or target
     
     for _, item in ipairs(aeInventory) do
-        -- Extract any string identifier from item tables (name, id, fingerprint, display_name)
+        -- Extract any string identifier from item tables (name, id, fingerprint, display_name, item object)
         local aeRaw = item.name or item.id or item.fingerprint or (type(item.item) == "table" and item.item.id) or ""
         if type(aeRaw) == "string" and aeRaw ~= "" then
             local aeClean = aeRaw:lower():gsub(" ", "")
@@ -86,12 +86,16 @@ local function networkWorker()
     term.clear()
     term.setCursorPos(1,1)
     print("=== LOGISTICS KERNEL TERMINAL LOGGER ACTIVE ===")
+    print("Diagnostic logs will be saved to: ae2_dump.txt")
+    print("Open it using 'edit ae2_dump.txt' to view it without scrolling!")
+    
+    local initialDumpWritten = false
     
     while true do
         local colony = peripheral.find("colony_integrator")
         local ae2 = peripheral.find("me_bridge")
         colonyConnected = (colony ~= nil)
-        ae2Connected = (ae2 ~= nil)
+        ae2Connected = (me_bridge ~= nil) or (ae2 ~= nil)
         
         if not colony or not ae2 then
             hasActiveErrors = true
@@ -112,25 +116,42 @@ local function networkWorker()
                 hasActiveErrors = false
                 local tempRequests = {}
                 
-                print(string.format("\n--- NETWORK POLL MATRIX [%s] ---", os.date("%H:%M:%S")))
-                
                 local aeInventory = {}
                 local listSuccess, listData = pcall(function() return ae2.listItems() or ae2.getItems() or {} end)
                 if listSuccess and listData then
                     aeInventory = listData
                     
-                    -- ADVANCED DEBUGGER BLOCK: Print structure of first 2 items found in AE2 storage array
-                    print(">> AE2 STRUCTURE DUMP (First 2 available items):")
-                    local dumpCount = 0
-                    for k, v in pairs(aeInventory) do
-                        if dumpCount < 2 then
-                            print(string.format("  [%d] raw name=%s, id=%s, amount=%s, count=%s", 
-                                dumpCount + 1, tostring(v.name), tostring(v.id), tostring(v.amount), tostring(v.count)))
-                            dumpCount = dumpCount + 1
+                    -- HIGH-UTILITY DIAGNOSTIC FILE GENERATION: Dump structure data safely without terminal spam
+                    if not initialDumpWritten then
+                        local logFile = fs.open("ae2_dump.txt", "w")
+                        if logFile then
+                            logFile.writeLine("=== AE2 INVENTORY FIELD DUMP MATCHING LOG ===")
+                            logFile.writeLine("Generated at: " .. os.date("%H:%M:%S"))
+                            logFile.writeLine(string.format("Total Stored Registry Types Found: %d\n", #aeInventory))
+                            
+                            local dumpLimit = 0
+                            for k, v in pairs(aeInventory) do
+                                if dumpLimit < 15 then
+                                    logFile.writeLine(string.format("[%d] Type: %s", dumpLimit + 1, type(v)))
+                                    if type(v) == "table" then
+                                        logFile.writeLine(string.format("    -> .name   = %s", tostring(v.name)))
+                                        logFile.writeLine(string.format("    -> .id     = %s", tostring(v.id)))
+                                        logFile.writeLine(string.format("    -> .count  = %s", tostring(v.count)))
+                                        logFile.writeLine(string.format("    -> .amount = %s", tostring(v.amount)))
+                                        if v.item and type(v.item) == "table" then
+                                            logFile.writeLine(string.format("    -> .item.id= %s", tostring(v.item.id)))
+                                        end
+                                    else
+                                        logFile.writeLine(string.format("    -> Raw Value = %s", tostring(v)))
+                                    end
+                                    dumpLimit = dumpLimit + 1
+                                end
+                            end
+                            logFile.close()
+                            initialDumpWritten = true
+                            print("[DIAGNOSTICS] Done! Written 15 registry structure variants to 'ae2_dump.txt'")
                         end
                     end
-                else
-                    print(">> ERROR: Failed to poll AE2 Inventory entirely.")
                 end
                 
                 for _, req in ipairs(requests) do
@@ -146,16 +167,12 @@ local function networkWorker()
                         local displayItemName = rawRegistryName:gsub("^.*:", ""):gsub("_", " ")
                         displayItemName = displayItemName:sub(1,1):upper() .. displayItemName:sub(2)
                         
-                        print(string.format("[TRYING] Colony ID: '%s' | Qty: %d", tostring(rawRegistryName), needed))
-                        
                         local systemItem = matchSystemItem(rawRegistryName, aeInventory)
                         local status = "Missing"
                         local available = 0
                         
                         if systemItem then
-                            -- Look up volume across count/amount keys interchangeably
                             available = systemItem.amount or systemItem.count or 0
-                            print(string.format("  -> MATCH CONFIRMED! Stored Volume: %d", available))
                             
                             if available >= needed then
                                 status = "Exporting"
@@ -174,7 +191,6 @@ local function networkWorker()
                                 end
                             end
                         else
-                            print("  -> ERROR: No match found inside AE2 Registry.")
                             addLog("No AE2 item map for: " .. displayItemName)
                         end
                         
