@@ -1,6 +1,6 @@
 -- ATM10 MineColonies to AE2 Bridge Dashboard (Neon Tech Variant)
 -- Optimized for 5x3 Monitor with a Futuristic Dark Base Aesthetic
--- FUZZY MATRIX DISCOVERY CORE: Option 1 Structural Key Extraction
+-- FUZZY MATRIX DISCOVERY CORE: Combined Name Filter and Quantity Extraction
 
 -- ====== CONFIGURATION ======
 local MONITOR_SIDE = "top"         
@@ -57,11 +57,13 @@ local C_FAIL    = colors.red         -- Critical Red (Missing/Offline)
 -- Deep-inspect item names for fuzzy matrix matching
 local function matchSystemItem(colonyItemName, aeInventory)
     if not aeInventory then return nil end
-    local cleanName = colonyItemName:gsub(" ", ""):lower():gsub("minecraft:", ""):gsub("_", "")
+    -- Hybrid cleanup: strips mod markers and formats into flat lookups
+    local cleanName = colonyItemName:gsub(" ", ""):lower():gsub("^.*:", ""):gsub("_", "")
     
     for _, item in ipairs(aeInventory) do
         local techName = item.name:match(":([^:]+)$") or item.name or ""
-        if techName:gsub("_", ""):lower() == cleanName or item.name:lower() == colonyItemName:lower() then
+        local cleanTech = techName:gsub("_", ""):lower()
+        if cleanTech == cleanName or item.name:lower() == colonyItemName:lower() then
             return item
         end
     end
@@ -105,30 +107,27 @@ local function networkWorker()
                 end
                 
                 for _, req in ipairs(requests) do
-                    -- Count requirement lives on the parent request object
-                    local needed = req.count or req.needed or 1
-                    
                     for _, item in ipairs(req.items) do
-                        local itemName = item.id or item.display_name or item.name or "Unknown Item"
+                        -- Combination read: Use modern string ID tags alongside structural properties
+                        local rawName = item.id or item.display_name or item.name or "Unknown"
+                        local needed = item.count or item.needed or req.count or req.needed or 1
                         
-                        if type(itemName) == "string" then
-                            itemName = itemName:match("^[^#]+") or itemName
-                        end
+                        -- Clean formatting for terminal reporting lines
+                        local displayItemName = rawName:gsub("^.*:", ""):gsub("_", " ")
                         
-                        local systemItem = matchSystemItem(itemName, aeInventory)
+                        local systemItem = matchSystemItem(rawName, aeInventory)
                         local status = "Missing"
                         local available = 0
                         
                         if systemItem then
-                            -- Directly read available stock amount from our inventory cache
                             available = systemItem.amount or 0
                             
                             if available >= needed then
                                 status = "Exporting"
                                 local expSuccess = ae2.exportItem({name = systemItem.name, count = needed}, EXPORT_DIRECTION)
                                 if expSuccess then
-                                    addDelivery(itemName, needed)
-                                    addLog("Exported " .. needed .. "x " .. itemName)
+                                    addDelivery(displayItemName, needed)
+                                    addLog("Exported " .. needed .. "x " .. displayItemName)
                                 end
                             else
                                 status = "Crafting"
@@ -140,12 +139,12 @@ local function networkWorker()
                                 end
                             end
                         else
-                            addLog("No AE2 item map for: " .. itemName)
+                            addLog("No AE2 item map for: " .. displayItemName)
                         end
                         
                         local displayStatus = string.format("[%s]", status)
                         table.insert(tempRequests, {
-                            text = string.format("%-22s | %-5d | %s", itemName:sub(1, 22), needed, displayStatus),
+                            text = string.format("%-22s | %-5d | %s", displayItemName:sub(1, 22), needed, displayStatus),
                             color = (status == "Exporting") and C_SUCCESS or ((status == "Crafting") and C_WARN or C_FAIL)
                         })
                     end
