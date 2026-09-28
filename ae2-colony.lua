@@ -1,9 +1,8 @@
--- 2
 -- ATM10 MineColonies to AE2 Bridge Supply Engine
 -- Production Core (ATM10 v8.1 / MC 1.21.1 / AP v0.7.x)
 
 -- ====== CONFIGURATION ======
-local EXPORT_TARGET = "down"   
+local EXPORT_TARGET = "front"   -- Options: "down", "up", "north", "south", "east", "west"
 local REFRESH_RATE = 5
 -- ===========================
 
@@ -55,32 +54,26 @@ local function processDemands()
                     print("  -> Storage Check: Stored Balance = " .. available)
 
                     if available >= needed then
-                        print("  -> Status: In Stock. Executing safe multi-signature export...")
+                        print("  -> Status: In Stock. Exporting...")
                         
-                        local callSuccess, res, err
                         local itemTable = { name = itemID, count = needed }
+                        local callSuccess, res, err
                         
-                        -- SIGNATURE TRY 1: Modern AP 1.21.1 standard (itemTable, direction)
-                        callSuccess, res, err = pcall(ae2.exportItem, itemTable, EXPORT_TARGET:lower())
-                        
-                        -- SIGNATURE TRY 2: Alternative build format (direction, itemTable)
-                        if not callSuccess or not res or res == 0 then
-                            callSuccess, res, err = pcall(ae2.exportItem, EXPORT_TARGET:lower(), itemTable)
-                        end
-                        
-                        -- SIGNATURE TRY 3: Secondary direction token parsing ("bottom" instead of "down")
-                        if not callSuccess or not res or res == 0 then
-                            callSuccess, res, err = pcall(ae2.exportItem, itemTable, "bottom")
-                        end
-                        
-                        -- SIGNATURE TRY 4: Flipped secondary token parsing ("bottom", itemTable)
-                        if not callSuccess or not res or res == 0 then
-                            callSuccess, res, err = pcall(ae2.exportItem, "bottom", itemTable)
-                        end
-                        
-                        -- SIGNATURE TRY 5: Broad fallback targeting peripheral network string just in case
-                        if not callSuccess or not res or res == 0 then
-                            callSuccess, res, err = pcall(ae2.exportItemToPeripheral, itemTable, EXPORT_TARGET)
+                        -- Strictly follow Official 0.7 Spec: exportItem(item, direction)
+                        if ae2.exportItem then
+                            callSuccess, res, err = pcall(ae2.exportItem, itemTable, EXPORT_TARGET:lower())
+                            
+                            -- Fallback 1: Try Uppercase direction ("DOWN")
+                            if not callSuccess or not res or res == 0 then
+                                callSuccess, res, err = pcall(ae2.exportItem, itemTable, EXPORT_TARGET:upper())
+                            end
+                            
+                            -- Fallback 2: Flipped signature just in case
+                            if not callSuccess or not res or res == 0 then
+                                callSuccess, res, err = pcall(ae2.exportItem, EXPORT_TARGET:lower(), itemTable)
+                            end
+                        else
+                            callSuccess, err = false, "exportItem function missing from peripheral!"
                         end
 
                         if callSuccess and (res and res ~= 0) then
@@ -88,6 +81,7 @@ local function processDemands()
                         else
                             local finalErr = err or res or "INVENTORY_NOT_FOUND"
                             print("  ❌ EXPORT ERROR: " .. tostring(finalErr))
+                            print("     (Check that chest is touching the ME Bridge block, not the computer)")
                         end
                     else
                         local craftQty = needed - available
@@ -96,14 +90,15 @@ local function processDemands()
                         if isCraftable then
                             print("  -> Triggering autocraft for " .. craftQty .. " units...")
                             
-                            -- Pass a proper item stack table and catch both pcall and API return states
-                            local callSuccess, craftSuccess, craftErr = pcall(ae2.craftItem, {name = itemID, count = craftQty})
-                            
-                            if callSuccess and craftSuccess then
-                                print("  ✔ SUCCESS: Craft order locked into AE2 system.")
+                            if ae2.craftItem then
+                                local pSuccess, cSuccess, cErr = pcall(ae2.craftItem, {name = itemID, count = craftQty})
+                                if pSuccess and cSuccess then
+                                    print("  ✔ SUCCESS: Craft order locked into AE2 system.")
+                                else
+                                    print("  ❌ CRAFT ERROR: " .. tostring(cErr or cSuccess or "Rejected by AE2"))
+                                end
                             else
-                                local actualErr = craftErr or craftSuccess or "No CPU available or craft rejected"
-                                print("  ❌ CRAFT ERROR: " .. tostring(actualErr))
+                                print("  ❌ CRAFT ERROR: craftItem function missing!")
                             end
                         else
                             print("  ❌ CRAFT ABORTED: NOT_CRAFTABLE (No encoded AE2 Pattern found)")
