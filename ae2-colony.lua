@@ -1,5 +1,5 @@
 -- ATM10 MineColonies to AE2 Bridge Supply Engine
--- Minimalist 1.21.1 Linear Verification Core
+-- Minimalist 1.21.1 Method Core (Self-Reference Fix)
 
 local EXPORT_DIRECTION = "down"
 local REFRESH_RATE = 5
@@ -38,25 +38,29 @@ local function processDemands()
             for _, item in ipairs(req.items) do
                 local itemID = extractItemString(item)
                 if itemID and type(itemID) == "string" then
-                    -- Strip trailing NBT hash blocks cleanly
+                    -- Strip trailing hash strings safely
                     itemID = itemID:match("^[^#]+") or itemID
                     
                     print("\n[TARGET] Item: " .. itemID .. " | Demand Qty: " .. needed)
                     
-                    -- Query item balance cleanly using string matching wrappers
-                    local detail = ae2.getItem({name = itemID})
+                    -- Query item data safely via explicit colon instance context
+                    local detail = ae2:getItem({name = itemID})
                     local available = detail and (detail.count or detail.amount) or 0
                     print("  -> Storage Check: Stored Balance = " .. available)
 
                     if available >= needed then
-                        print("  -> Status: In Stock. Dispatching flat arguments...")
+                        print("  -> Status: In Stock. Dispatching item...")
                         
-                        -- CRITICAL PASS FIX: Direct single-string assignment to bypass table parser limitations
-                        local success, res = pcall(ae2.exportItem, itemID, needed, EXPORT_DIRECTION)
+                        -- FIX: Use exact colon-notation method closure to pass self-references securely
+                        local success, res = pcall(function()
+                            return ae2:exportItem({name = itemID, count = needed}, EXPORT_DIRECTION)
+                        end)
                         
-                        -- Defensive fallback pass in case direction matches a peripheral name string block
+                        -- Flat string argument pass fallback using exact colon context
                         if not success then
-                            success, res = pcall(ae2.exportItem, {name = itemID, count = needed}, EXPORT_DIRECTION)
+                            success, res = pcall(function()
+                                return ae2:exportItem(itemID, needed, EXPORT_DIRECTION)
+                            end)
                         end
                         
                         if success then
@@ -66,14 +70,12 @@ local function processDemands()
                         end
                     else
                         local craftQty = needed - available
-                        print("  -> Status: Shortage. Triggering flat craft query for " .. craftQty .. " units...")
+                        print("  -> Status: Shortage. Triggering craft loop for " .. craftQty .. " units...")
                         
-                        -- Execute craft routines directly via strict table descriptors
-                        local success, err = pcall(ae2.craftItem, {id = itemID, count = craftQty})
-                        
-                        if not success then
-                            success, err = pcall(ae2.craftItem, {name = itemID, count = craftQty})
-                        end
+                        -- Target crafting via identical wrapped colon methods
+                        local success, err = pcall(function()
+                            return ae2:craftItem({name = itemID, count = craftQty})
+                        end)
                         
                         if success then
                             print("  ✔ SUCCESS: Craft order locked into AE2 system.")
