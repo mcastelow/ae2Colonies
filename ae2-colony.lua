@@ -1,6 +1,5 @@
--- t
 -- ATM10 MineColonies to AE2 Bridge Supply Engine
--- Minimalist 1.21.1 Clean Core (Java Bridge Type Alignment)
+-- Minimalist 1.21.1 Linear Verification Core
 
 local EXPORT_DIRECTION = "down"
 local REFRESH_RATE = 5
@@ -39,54 +38,45 @@ local function processDemands()
             for _, item in ipairs(req.items) do
                 local itemID = extractItemString(item)
                 if itemID and type(itemID) == "string" then
-                    -- Strip trailing hash metadata blocks cleanly
+                    -- Strip trailing NBT hash blocks cleanly
                     itemID = itemID:match("^[^#]+") or itemID
                     
                     print("\n[TARGET] Item: " .. itemID .. " | Demand Qty: " .. needed)
                     
-                    -- Query individual storage metrics via direct single keys
+                    -- Query item balance cleanly using string matching wrappers
                     local detail = ae2.getItem({name = itemID})
                     local available = detail and (detail.count or detail.amount) or 0
                     print("  -> Storage Check: Stored Balance = " .. available)
 
                     if available >= needed then
-                        print("  -> Status: In Stock. Dispatching item payload...")
+                        print("  -> Status: In Stock. Dispatching flat arguments...")
                         
-                        -- FIX: Explicitly wrap the identifier string inside a deep 'item = {id = ...}' sub-table 
-                        -- to align perfectly with the modern Advanced Peripherals Java deserializer typechecker.
-                        local success, res = pcall(function()
-                            return ae2.exportItem({item = {id = itemID}, count = needed}, EXPORT_DIRECTION)
-                        end)
+                        -- CRITICAL PASS FIX: Direct single-string assignment to bypass table parser limitations
+                        local success, res = pcall(ae2.exportItem, itemID, needed, EXPORT_DIRECTION)
                         
-                        -- Robust fallback pass targeting alternate mod configurations
-                        if not success or not res or res == 0 then
-                            pcall(function()
-                                res = ae2.exportItem({name = itemID, count = needed}, EXPORT_DIRECTION)
-                            end)
-                        end
-                        
-                        if success or (type(res) == "number" and res > 0) then
-                            print("  ✔ SUCCESS: Pulled items to chest!")
-                        else
-                            print("  ❌ EXPORT ERROR: " .. tostring(res or "Obstructed / Blocked"))
-                        end
-                    else
-                        local craftQty = needed - available
-                        print("  -> Status: Shortage. Triggering autocraft for " .. craftQty .. " units...")
-                        
-                        -- Structure crafting calls with identical compound descriptors
-                        local success, err = pcall(function()
-                            return ae2.craftItem({item = {id = itemID}, count = craftQty})
-                        end)
-                        
+                        -- Defensive fallback pass in case direction matches a peripheral name string block
                         if not success then
-                            pcall(function()
-                                success, err = ae2.craftItem({id = itemID, count = craftQty})
-                            end)
+                            success, res = pcall(ae2.exportItem, {name = itemID, count = needed}, EXPORT_DIRECTION)
                         end
                         
                         if success then
-                            print("  ✔ SUCCESS: Craft order locked into AE2.")
+                            print("  ✔ SUCCESS: Pulled items into delivery chest!")
+                        else
+                            print("  ❌ EXPORT ERROR: " .. tostring(res or "No item moved"))
+                        end
+                    else
+                        local craftQty = needed - available
+                        print("  -> Status: Shortage. Triggering flat craft query for " .. craftQty .. " units...")
+                        
+                        -- Execute craft routines directly via strict table descriptors
+                        local success, err = pcall(ae2.craftItem, {id = itemID, count = craftQty})
+                        
+                        if not success then
+                            success, err = pcall(ae2.craftItem, {name = itemID, count = craftQty})
+                        end
+                        
+                        if success then
+                            print("  ✔ SUCCESS: Craft order locked into AE2 system.")
                         else
                             print("  ❌ CRAFT ERROR: " .. tostring(err or "No Pattern/CPU"))
                         end
@@ -100,7 +90,7 @@ end
 while true do
     local globalSuccess, globalErr = pcall(processDemands)
     if not globalSuccess then
-        print("\n[CRITICAL PASS EXCEPTION]: " .. tostring(globalErr))
+        print("\n[CRITICAL ERROR]: " .. tostring(globalErr))
     end
     sleep(REFRESH_RATE)
 end
