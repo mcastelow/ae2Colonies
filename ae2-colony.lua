@@ -1,5 +1,5 @@
 -- ATM10 MineColonies to AE2 Bridge Supply Engine
--- Minimalist 1.21.1 Execution Core
+-- Minimalist 1.21.1 Clean Core
 
 local EXPORT_DIRECTION = "down"
 local REFRESH_RATE = 5
@@ -38,14 +38,40 @@ local function processDemands()
             for _, item in ipairs(req.items) do
                 local itemID = extractItemString(item)
                 if itemID and type(itemID) == "string" then
+                    -- Strip trailing hash data blocks safely
                     itemID = itemID:match("^[^#]+") or itemID
+                    
+                    print("\n[TARGET] Item: " .. itemID .. " | Demand Qty: " .. needed)
+                    
+                    -- Query individual storage metrics via direct single keys
                     local detail = ae2.getItem({name = itemID})
                     local available = detail and (detail.count or detail.amount) or 0
+                    print("  -> Storage Check: Stored Balance = " .. available)
 
                     if available >= needed then
-                        ae2.exportItem({name = itemID, count = needed}, EXPORT_DIRECTION)
+                        print("  -> Status: In Stock. Dispatching item payload...")
+                        -- FIX: AP 0.7.x payload expectations explicitly require the 'id' key instead of 'name'
+                        local success, err = pcall(function()
+                            return ae2.exportItem({id = itemID, count = needed}, EXPORT_DIRECTION)
+                        end)
+                        
+                        if success then
+                            print("  ✔ SUCCESS: Pulled to chest!")
+                        else
+                            print("  ❌ EXPORT ERROR: " .. tostring(err or "Obstructed"))
+                        end
                     else
-                        ae2.requestCrafting({name = itemID}, needed - available)
+                        local craftQty = needed - available
+                        print("  -> Status: Shortage. Triggering autocraft for " .. craftQty .. " units...")
+                        local success, err = pcall(function()
+                            return ae2.requestCrafting({id = itemID}, craftQty)
+                        end)
+                        
+                        if success then
+                            print("  ✔ SUCCESS: Craft order locked into AE2.")
+                        else
+                            print("  ❌ CRAFT ERROR: " .. tostring(err or "No Pattern/CPU"))
+                        end
                     end
                 end
             end
@@ -54,6 +80,9 @@ local function processDemands()
 end
 
 while true do
-    pcall(processDemands)
+    local globalSuccess, globalErr = pcall(processDemands)
+    if not globalSuccess then
+        print("\n[CRITICAL PASS EXCEPTION]: " .. tostring(globalErr))
+    end
     sleep(REFRESH_RATE)
 end
