@@ -1,5 +1,6 @@
+-- t
 -- ATM10 MineColonies to AE2 Bridge Supply Engine
--- Minimalist 1.21.1 Clean Core (Flat Arguments Update)
+-- Minimalist 1.21.1 Clean Core (Java Bridge Type Alignment)
 
 local EXPORT_DIRECTION = "down"
 local REFRESH_RATE = 5
@@ -51,31 +52,38 @@ local function processDemands()
                     if available >= needed then
                         print("  -> Status: In Stock. Dispatching item payload...")
                         
-                        -- FIX: Pass completely flat arguments (String, Number, String) to avoid Java table errors
+                        -- FIX: Explicitly wrap the identifier string inside a deep 'item = {id = ...}' sub-table 
+                        -- to align perfectly with the modern Advanced Peripherals Java deserializer typechecker.
                         local success, res = pcall(function()
-                            return ae2.exportItem(itemID, needed, EXPORT_DIRECTION)
+                            return ae2.exportItem({item = {id = itemID}, count = needed}, EXPORT_DIRECTION)
                         end)
                         
-                        -- Fallback pass in case your specific AP build still checks for a compound sub-table
-                        if not success then
-                            success, res = pcall(function()
-                                return ae2.exportItem({name = itemID, count = needed}, EXPORT_DIRECTION)
+                        -- Robust fallback pass targeting alternate mod configurations
+                        if not success or not res or res == 0 then
+                            pcall(function()
+                                res = ae2.exportItem({name = itemID, count = needed}, EXPORT_DIRECTION)
                             end)
                         end
                         
-                        if success then
+                        if success or (type(res) == "number" and res > 0) then
                             print("  ✔ SUCCESS: Pulled items to chest!")
                         else
-                            print("  ❌ EXPORT ERROR: " .. tostring(res or "Obstructed"))
+                            print("  ❌ EXPORT ERROR: " .. tostring(res or "Obstructed / Blocked"))
                         end
                     else
                         local craftQty = needed - available
                         print("  -> Status: Shortage. Triggering autocraft for " .. craftQty .. " units...")
                         
-                        -- Query crafting with the validated signature syntax
+                        -- Structure crafting calls with identical compound descriptors
                         local success, err = pcall(function()
-                            return ae2.craftItem({id = itemID, count = craftQty})
+                            return ae2.craftItem({item = {id = itemID}, count = craftQty})
                         end)
+                        
+                        if not success then
+                            pcall(function()
+                                success, err = ae2.craftItem({id = itemID, count = craftQty})
+                            end)
+                        end
                         
                         if success then
                             print("  ✔ SUCCESS: Craft order locked into AE2.")
