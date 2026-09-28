@@ -1,16 +1,18 @@
 -- ATM10 MineColonies to AE2 Bridge Supply Engine
--- Production Core (ATM10 v8.1 / MC 1.21.1 / AP v0.7.x)
+-- Production Core (ATM10 v8.1 / MC 1.21.1 / Wired Network Mode)
 
 -- ====== CONFIGURATION ======
-local EXPORT_TARGET = "front"   -- Options: "down", "up", "north", "south", "east", "west"
+-- Pointed directly to your connected Netherite Barrel network address
+local EXPORT_CONTAINER = "sophisticatedstorage:barrel_0"   
 local REFRESH_RATE = 5
 -- ===========================
 
+-- Dynamically find the peripherals over the network cable
 local colony = peripheral.find("colony_integrator")
 local ae2 = peripheral.find("me_bridge")
 
-if not colony then error("[FATAL] colony_integrator block not found!") end
-if not ae2 then error("[FATAL] me_bridge block not found!") end
+if not colony then error("[FATAL] colony_integrator not detected on the modem network! (Did you right-click its modem?)") end
+if not ae2 then error("[FATAL] me_bridge not detected on the modem network! (Did you right-click its modem?)") end
 
 local function extractItemString(itemObj)
     if not itemObj then return nil end
@@ -44,7 +46,6 @@ local function processDemands()
                     
                     print("\n[TARGET] Item: " .. itemID .. " | Demand Qty: " .. needed)
                     
-                    -- Native single-key item tracking check
                     local detail = ae2.getItem({id = itemID})
                     if not detail then detail = ae2.getItem({name = itemID}) end
                     
@@ -54,34 +55,24 @@ local function processDemands()
                     print("  -> Storage Check: Stored Balance = " .. available)
 
                     if available >= needed then
-                        print("  -> Status: In Stock. Exporting...")
+                        print("  -> Status: In Stock. Transporting over cable network...")
                         
                         local itemTable = { name = itemID, count = needed }
                         local callSuccess, res, err
                         
-                        -- Strictly follow Official 0.7 Spec: exportItem(item, direction)
-                        if ae2.exportItem then
-                            callSuccess, res, err = pcall(ae2.exportItem, itemTable, EXPORT_TARGET:lower())
-                            
-                            -- Fallback 1: Try Uppercase direction ("DOWN")
-                            if not callSuccess or not res or res == 0 then
-                                callSuccess, res, err = pcall(ae2.exportItem, itemTable, EXPORT_TARGET:upper())
-                            end
-                            
-                            -- Fallback 2: Flipped signature just in case
-                            if not callSuccess or not res or res == 0 then
-                                callSuccess, res, err = pcall(ae2.exportItem, EXPORT_TARGET:lower(), itemTable)
-                            end
-                        else
-                            callSuccess, err = false, "exportItem function missing from peripheral!"
+                        -- Modern 1.21.1 Advanced Peripherals uses the peripheral ID string as the destination argument
+                        callSuccess, res, err = pcall(ae2.exportItem, itemTable, EXPORT_CONTAINER)
+                        
+                        -- Fallback variant parameter order if your exact AP sub-version requires it
+                        if not callSuccess or not res or res == 0 then
+                            callSuccess, res, err = pcall(ae2.exportItem, EXPORT_CONTAINER, itemTable)
                         end
 
                         if callSuccess and (res and res ~= 0) then
-                            print("  ✔ SUCCESS: Pulled items to target container!")
+                            print("  ✔ SUCCESS: Items pushed directly into target barrel!")
                         else
-                            local finalErr = err or res or "INVENTORY_NOT_FOUND"
+                            local finalErr = err or res or "BARREL_REJECTED_TRANSFER"
                             print("  ❌ EXPORT ERROR: " .. tostring(finalErr))
-                            print("     (Check that chest is touching the ME Bridge block, not the computer)")
                         end
                     else
                         local craftQty = needed - available
@@ -90,15 +81,11 @@ local function processDemands()
                         if isCraftable then
                             print("  -> Triggering autocraft for " .. craftQty .. " units...")
                             
-                            if ae2.craftItem then
-                                local pSuccess, cSuccess, cErr = pcall(ae2.craftItem, {name = itemID, count = craftQty})
-                                if pSuccess and cSuccess then
-                                    print("  ✔ SUCCESS: Craft order locked into AE2 system.")
-                                else
-                                    print("  ❌ CRAFT ERROR: " .. tostring(cErr or cSuccess or "Rejected by AE2"))
-                                end
+                            local pSuccess, cSuccess, cErr = pcall(ae2.craftItem, {name = itemID, count = craftQty})
+                            if pSuccess and cSuccess then
+                                print("  ✔ SUCCESS: Craft order locked into AE2 system.")
                             else
-                                print("  ❌ CRAFT ERROR: craftItem function missing!")
+                                print("  ❌ CRAFT ERROR: " .. tostring(cErr or cSuccess or "Rejected by AE2"))
                             end
                         else
                             print("  ❌ CRAFT ABORTED: NOT_CRAFTABLE (No encoded AE2 Pattern found)")
