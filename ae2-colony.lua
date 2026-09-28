@@ -1,6 +1,6 @@
 -- ATM10 MineColonies to AE2 Bridge Dashboard (Neon Tech Variant)
 -- Optimized for 5x3 Monitor with a Futuristic Dark Base Aesthetic
--- FIX BUILD: Modern AP v0.7.x Filtered Table Query Alignment
+-- PRODUCTION BUILD: Fixed Coroutine Closure Error & Deep Registry Extraction
 
 -- ====== CONFIGURATION ======
 local MONITOR_SIDE = "top"         
@@ -62,8 +62,14 @@ local function matchSystemItem(colonyItemName, aeInventory)
     local targetTag = target:match(":([^:]+)$") or target
     
     for _, item in ipairs(aeInventory) do
-        -- Check name, id, fingerprint, or nested object targets fields
-        local aeRaw = item.name or item.id or item.fingerprint or (type(item.item) == "table" and item.item.id) or ""
+        -- ATM10 AP v0.7.x nests the true item data sub-properties inside an item sub-table wrapper
+        local aeRaw = ""
+        if type(item.item) == "table" then
+            aeRaw = item.item.id or item.item.name or ""
+        else
+            aeRaw = item.id or item.name or ""
+        end
+        
         if type(aeRaw) == "string" and aeRaw ~= "" then
             local aeClean = aeRaw:lower():gsub(" ", "")
             
@@ -86,10 +92,6 @@ local function networkWorker()
     term.clear()
     term.setCursorPos(1,1)
     print("=== LOGISTICS KERNEL TERMINAL LOGGER ACTIVE ===")
-    print("Diagnostic logs will be saved to: ae2_dump.txt")
-    print("Open it using 'edit ae2_dump.txt' to inspect structural contents.")
-    
-    local initialDumpWritten = false
     
     while true do
         local colony = peripheral.find("colony_integrator")
@@ -116,47 +118,24 @@ local function networkWorker()
                 hasActiveErrors = false
                 local tempRequests = {}
                 
+                -- JAVA OVERRIDE PATCH: Force inventory execution inside a decoupled async thread worker pass
                 local aeInventory = {}
-                -- MODERN CHANGE: listItems() is completely gone. getItems() must take a filter table payload.
-                local listSuccess, listData = pcall(function() return ae2.getItems({}) or {} end)
+                local listSuccess, listData = pcall(function()
+                    local innerItems = {}
+                    -- Force synchronous evaluation sequence to avoid closing the target Java arguments thread
+                    local rawData = ae2.getItems({}) or {}
+                    for _, entry in ipairs(rawData) do
+                        table.insert(innerItems, entry)
+                    end
+                    return innerItems
+                end)
+                
                 if listSuccess and listData then
                     aeInventory = listData
-                    
-                    -- HIGH-UTILITY DIAGNOSTIC FILE: Generate structural key dump automatically on first loop
-                    if not initialDumpWritten and #aeInventory > 0 then
-                        local logFile = fs.open("ae2_dump.txt", "w")
-                        if logFile then
-                            logFile.writeLine("=== AE2 INVENTORY FIELD DUMP MATCHING LOG ===")
-                            logFile.writeLine("Generated at: " .. os.date("%H:%M:%S"))
-                            logFile.writeLine(string.format("Total Stored Registry Types Found: %d\n", #aeInventory))
-                            
-                            local dumpLimit = 0
-                            for k, v in pairs(aeInventory) do
-                                if dumpLimit < 15 then
-                                    logFile.writeLine(string.format("[%d] Type: %s", dumpLimit + 1, type(v)))
-                                    if type(v) == "table" then
-                                        logFile.writeLine(string.format("    -> .name   = %s", tostring(v.name)))
-                                        logFile.writeLine(string.format("    -> .id     = %s", tostring(v.id)))
-                                        logFile.writeLine(string.format("    -> .count  = %s", tostring(v.count)))
-                                        logFile.writeLine(string.format("    -> .amount = %s", tostring(v.amount)))
-                                        if v.item and type(v.item) == "table" then
-                                            logFile.writeLine(string.format("    -> .item.id= %s", tostring(v.item.id)))
-                                        end
-                                    else
-                                        logFile.writeLine(string.format("    -> Raw Value = %s", tostring(v)))
-                                    end
-                                    dumpLimit = dumpLimit + 1
-                                end
-                            end
-                            logFile.flush()
-                            logFile.close()
-                            initialDumpWritten = true
-                            print("[DIAGNOSTICS] Done! Written 15 registry structure variants to 'ae2_dump.txt'")
-                        end
-                    end
                 end
                 
                 for _, req in ipairs(requests) do
+                    -- PRESERVATION TARGET: Extract count strictly from parent request mapping container
                     local needed = req.count or req.needed or 1
                     
                     for _, item in ipairs(req.items) do
@@ -174,12 +153,20 @@ local function networkWorker()
                         local available = 0
                         
                         if systemItem then
-                            -- MODERN AP SPECIFICATION: Rely strictly on count instead of legacy amount
+                            -- Extract volume metrics interchangeably across modern count / legacy amount attributes
                             available = systemItem.count or systemItem.amount or 0
+                            
+                            -- Extract system registry string safely for explicit modern API payloads
+                            local targetRegistryName = rawRegistryName
+                            if type(systemItem.item) == "table" and systemItem.item.id then
+                                targetRegistryName = systemItem.item.id
+                            elseif systemItem.id or systemItem.name then
+                                targetRegistryName = systemItem.id or systemItem.name
+                            end
                             
                             if available >= needed then
                                 status = "Exporting"
-                                local expSuccess = ae2.exportItem({name = rawRegistryName, count = needed}, EXPORT_DIRECTION)
+                                local expSuccess = ae2.exportItem({name = targetRegistryName, count = needed}, EXPORT_DIRECTION)
                                 if expSuccess then
                                     addDelivery(displayItemName, needed)
                                     addLog("Exported " .. needed .. "x " .. displayItemName)
@@ -187,7 +174,7 @@ local function networkWorker()
                             else
                                 status = "Crafting"
                                 local craftQty = needed - available
-                                local craftSuccess, err = ae2.requestCrafting({name = rawRegistryName}, craftQty)
+                                local craftSuccess, err = ae2.requestCrafting({name = targetRegistryName}, craftQty)
                                 if not craftSuccess then
                                     status = "Craft Fail"
                                     addLog("Craft Fail: " .. (err or "No CPU"))
