@@ -179,15 +179,16 @@ local function processDemands()
     end
 
     local requests = colony.getRequests()
-    if not requests or #requests == 0 then
+    if not requests or type(requests) ~= "table" or #requests == 0 then
         renderDashboard(statusLines)
         return
     end
 
     local mergedDemands = {}
     for _, req in ipairs(requests) do
-        local needed = req.count or req.needed or 1
-        if req.items then
+        local needed = req.count or req.needed or req.amount or 1
+        -- Guard against broken work orders missing an item array
+        if req.items and type(req.items) == "table" and req.items[1] then
             for _, item in ipairs(req.items) do
                 local itemID = extractItemString(item)
                 if itemID and type(itemID) == "string" then
@@ -197,6 +198,7 @@ local function processDemands()
             end
         end
     end
+
 
     for itemID, totalNeeded in pairs(mergedDemands) do
         local cleanName = itemID:gsub("^[^:]+:", "")
