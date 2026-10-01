@@ -1,5 +1,5 @@
 -- ATM10 MineColonies to AE2 Bridge Supply Engine
--- Production Core (ATM10 v8.1 / MC 1.21.1 / Edge-to-Edge ASCII Grid Edition)
+-- Production Core (ATM10 v8.1 / MC 1.21.1 / Segmented Deployment)
 
 -- ====== CONFIGURATION ======
 local EXPORT_CONTAINER = "sophisticatedstorage:barrel_0"   
@@ -44,6 +44,13 @@ local function getCpuMetrics(ae2)
     return string.format("%d/%d", active, total)
 end
 
+local function getSystemPowerDraw(ae2)
+    if not ae2 or not ae2.getEnergyUsage then return "0" end
+    local success, usage = pcall(ae2.getEnergyUsage)
+    if not success or not usage then return "0" end
+    return string.format("%d", usage)
+end
+
 local function renderDashboard(statusLines)
     local colony = peripheral.find("colony_integrator")
     local ae2 = peripheral.find("me_bridge")
@@ -51,20 +58,18 @@ local function renderDashboard(statusLines)
     local mon = peripheral.find("monitor")
 
     local cpuUsage = getCpuMetrics(ae2)
+    local powerDraw = getSystemPowerDraw(ae2)
 
-    -- 1. Console Fallback Print out
     term.clear()
     term.setCursorPos(1,1)
     print("=== LOGISTICS RADAR ACTIVE ===")
     for _, line in ipairs(statusLines) do print(line.text) end
 
-    -- 2. Clean 39-Wide Edge-to-Edge Monitor Layout
     if mon then
         mon.setTextScale(1.0) 
         mon.clear()
-        local w, h = mon.getSize() -- Snaps to exactly 39 character width slots
+        local w, h = mon.getSize()
         
-        -- Row 1: Structural Upper Title Frame Ribbon
         mon.setBackgroundColor(colors.black)
         mon.setTextColor(colors.gray)
         mon.setCursorPos(1, 1)
@@ -75,7 +80,6 @@ local function renderDashboard(statusLines)
         local headerPad = math.max(1, math.floor((w - #headerText) / 2))
         mon.write(string.rep("+", headerPad - 1) .. headerText .. string.rep("+", w - (headerPad + #headerText) + 1))
         
-        -- Row 2: Live Balanced Component Diagnostics Readout
         mon.setCursorPos(1, 2)
         mon.setTextColor(colors.gray)
         mon.write("| ")
@@ -96,7 +100,7 @@ local function renderDashboard(statusLines)
         mon.write("[o]    ")
         
         mon.setTextColor(colors.lightGray)
-        mon.write("AE2 CPU LOAD:[")
+        mon.write("CPUs:[")
         mon.setTextColor(cpuUsage:sub(1,1) == "0" and colors.cyan or colors.magenta)
         mon.write(cpuUsage)
         mon.setTextColor(colors.lightGray)
@@ -106,21 +110,31 @@ local function renderDashboard(statusLines)
         mon.setTextColor(colors.gray)
         mon.write("|")
 
-        -- Row 3, 4, 5: Expanded Table Structural Sections (Exactly 39 Chars Wide)
         mon.setCursorPos(1, 3)
+        mon.setTextColor(colors.gray)
+        mon.write("| ")
+        mon.setTextColor(colors.lightGray)
+        mon.write("SYS DRAW: ")
+        mon.setTextColor(colors.yellow)
+        mon.write(powerDraw .. " AE/t")
+        
+        mon.setCursorPos(w, 3)
+        mon.setTextColor(colors.gray)
+        mon.write("|")
+
+        mon.setCursorPos(1, 4)
         mon.setTextColor(colors.gray)
         mon.write("+====================================+")
         
-        mon.setCursorPos(1, 4)
+        mon.setCursorPos(1, 5)
         mon.setTextColor(colors.cyan)
         mon.write("| ITEM                 | QTY  | STATE |")
         
-        mon.setCursorPos(1, 5)
+        mon.setCursorPos(1, 6)
         mon.setTextColor(colors.gray)
         mon.write("+------------------------------------+")
         
-        -- Rows 6+: Tabular Queue Data Stream
-        local currentLine = 6
+        local currentLine = 7
         if #statusLines == 0 then
             mon.setCursorPos(1, currentLine)
             mon.setTextColor(colors.blue)
@@ -147,7 +161,6 @@ local function renderDashboard(statusLines)
                 renderedCount = renderedCount + 1
             end
             
-            -- Keep frame brackets pristine by printing wall spaces down empty cells
             for r = currentLine, h - 1 do
                 mon.setCursorPos(1, r)
                 mon.setTextColor(colors.gray)
@@ -161,13 +174,11 @@ local function renderDashboard(statusLines)
             end
         end
         
-        -- Final Row: Baseline Frame Bracket
         mon.setCursorPos(1, h)
         mon.setTextColor(colors.gray)
         mon.write("+" .. string.rep("-", w - 2) .. "+")
     end
 end
-
 local function processDemands()
     local statusLines = {}
     local colony = peripheral.find("colony_integrator")
@@ -179,16 +190,15 @@ local function processDemands()
     end
 
     local requests = colony.getRequests()
-    if not requests or type(requests) ~= "table" or #requests == 0 then
+    if not requests or #requests == 0 then
         renderDashboard(statusLines)
         return
     end
 
     local mergedDemands = {}
     for _, req in ipairs(requests) do
-        local needed = req.count or req.needed or req.amount or 1
-        -- Guard against broken work orders missing an item array
-        if req.items and type(req.items) == "table" and req.items[1] then
+        local needed = req.count or req.needed or 1
+        if req.items then
             for _, item in ipairs(req.items) do
                 local itemID = extractItemString(item)
                 if itemID and type(itemID) == "string" then
@@ -199,44 +209,42 @@ local function processDemands()
         end
     end
 
-
     for itemID, totalNeeded in pairs(mergedDemands) do
-        local cleanName = itemID:gsub("^[^:]+:", "")
-        
-        local detail = ae2.getItem({id = itemID})
-        if not detail then detail = ae2.getItem({name = itemID}) end
-        
-        local available = detail and (detail.count or detail.amount) or 0
-        local isCraftable = detail and detail.isCraftable or false
-
-        -- Expanded item field padding to 20 columns to line up perfectly across the 39 character width
-        local colItem = padRight(cleanName, 20)
-
-        if available >= totalNeeded then
-            -- ROUTING STATE (Plasma Green)
-            local itemTable = { name = itemID, count = totalNeeded }
-            local callSuccess, res = pcall(ae2.exportItem, itemTable, EXPORT_CONTAINER)
-            if not callSuccess or not res or res == 0 then
-                pcall(ae2.exportItem, EXPORT_CONTAINER, itemTable)
-            end
+        if totalNeeded > 0 then
+            local cleanName = itemID:gsub("^[^:]+:", "")
             
-            local colQty   = padRight(totalNeeded, 4)
-            local tableRow = string.format("| . %s | %s | ROUTE |", colItem, colQty)
-            table.insert(statusLines, { text = tableRow, color = colors.lime })
-        else
-            local craftQty = totalNeeded - available
-            local colQty   = padRight(craftQty, 4)
+            local detail = ae2.getItem({id = itemID})
+            if not detail then detail = ae2.getItem({name = itemID}) end
             
-            if isCraftable then
-                -- CRAFTING STATE (Quantum Amber)
-                pcall(ae2.craftItem, {name = itemID, count = craftQty})
+            local available = detail and (detail.count or detail.amount) or 0
+            local isCraftable = detail and detail.isCraftable or false
+
+            local colItem = padRight(cleanName, 20)
+
+            if available >= totalNeeded then
+                local itemTable = { name = itemID, count = totalNeeded }
+                local callSuccess, res = pcall(ae2.exportItem, itemTable, EXPORT_CONTAINER)
+                if not callSuccess or not res or res == 0 then
+                    pcall(ae2.exportItem, EXPORT_CONTAINER, itemTable)
+                end
                 
-                local tableRow = string.format("| . %s | %s | CRAFT |", colItem, colQty)
-                table.insert(statusLines, { text = tableRow, color = colors.orange })
+                local colQty   = padRight(totalNeeded, 4)
+                local tableRow = string.format("| . %s | %s | ROUTE |", colItem, colQty)
+                table.insert(statusLines, { text = tableRow, color = colors.lime })
             else
-                -- VOID STATE (Critical Missing Red)
-                local tableRow = string.format("| . %s | %s | VOID  |", colItem, colQty)
-                table.insert(statusLines, { text = tableRow, color = colors.red })
+                local craftQty = totalNeeded - available
+                if craftQty > 0 then
+                    local colQty = padRight(craftQty, 4)
+                    
+                    if isCraftable then
+                        pcall(ae2.craftItem, {name = itemID, count = craftQty})
+                        local tableRow = string.format("| . %s | %s | CRAFT |", colItem, colQty)
+                        table.insert(statusLines, { text = tableRow, color = colors.orange })
+                    else
+                        local tableRow = string.format("| . %s | %s | VOID  |", colItem, colQty)
+                        table.insert(statusLines, { text = tableRow, color = colors.red })
+                    end
+                end
             end
         end
     end
