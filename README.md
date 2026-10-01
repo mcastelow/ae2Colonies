@@ -36,7 +36,7 @@ For the script to scan, route, and map peripheral addresses correctly, your bloc
 1. Access the terminal command line of your in-game Advanced Computer.
 2. Run the following built-in HTTP download command to pull the kernel raw script directly into your local directory:
 
-wget https://raw.githubusercontent.com/mcastelow/ae2Colonies/refs/heads/main/ae2-colony.lua kernel.lua
+wget https://raw.githubusercontent.com/mcastelow/ae2Colonies/refs/heads/main/ae2-colony.lua startup.lua
 
 3. To set the system to initialize automatically whenever the chunk loads or the computer restarts, create a boot configuration file:
 
