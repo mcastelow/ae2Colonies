@@ -179,6 +179,7 @@ local function renderDashboard(statusLines)
         mon.write("+" .. string.rep("-", w - 2) .. "+")
     end
 end
+
 local function processDemands()
     local statusLines = {}
     local colony = peripheral.find("colony_integrator")
@@ -189,8 +190,16 @@ local function processDemands()
         return
     end
 
-    local requests = colony.getRequests()
-    if not requests or #requests == 0 then
+    -- DEFENSIVE SHIELD: Prevents Java IllegalStateExceptions inside MineColonies from killing the execution thread
+    local colonySuccess, requests = pcall(colony.getRequests)
+    
+    if not colonySuccess or not requests then
+        table.insert(statusLines, { text = "| ! COLONY DATA CORRUPTED (SKIPPED) |", color = colors.magenta })
+        renderDashboard(statusLines)
+        return
+    end
+
+    if #requests == 0 then
         renderDashboard(statusLines)
         return
     end
@@ -210,7 +219,7 @@ local function processDemands()
     end
 
     for itemID, totalNeeded in pairs(mergedDemands) do
-        if totalNeeded > 0 then
+        if type(totalNeeded) == "number" and totalNeeded > 0 then
             local cleanName = itemID:gsub("^[^:]+:", "")
             
             local detail = ae2.getItem({id = itemID})
