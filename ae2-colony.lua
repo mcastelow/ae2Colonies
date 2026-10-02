@@ -181,14 +181,16 @@ local function renderDashboard(statusLines)
 end
 
 -- =====================================================================
--- KERNEL LAYER PART 2: MAIN PROCESSING LOOP & WEAPON WHITELIST
+-- KERNEL LAYER PART 2: MAIN PROCESSING LOOP & BROAD WHITELIST FILTER
 -- =====================================================================
 
 -- ====== LOGISTICS ALLOWED WEAPONS REGISTRY ======
--- The computer will ONLY fulfill sword/bow requests if they match these exact IDs
+-- The computer will ONLY permit sword/bow requests matching these terms
 local ALLOWED_WEAPONS = {
     ["minecraft:bow"] = true,
-    ["minecraft:stone_sword"] = true
+    ["minecraft:stone_sword"] = true,
+    ["bow"] = true,          -- Permits basic display name variants
+    ["stone sword"] = true
 }
 -- ================================================
 
@@ -197,12 +199,18 @@ local function isItemAllowed(itemID)
     if not itemID then return false end
     local lowerID = itemID:lower()
     
-    -- Detect if MineColonies is asking for a weapon/tool category item
+    -- Broad capture: catches registry IDs, display names, and abstract mod queries
     local isWeapon = lowerID:find("sword") or lowerID:find("bow") or lowerID:find("shield")
     
     if isWeapon then
-        -- If it's a weapon, it MUST be explicitly registered in our whitelist table
-        return ALLOWED_WEAPONS[itemID] == true
+        -- Check if any keyword in our whitelist matches part of this weapon query
+        for allowedTerm, _ in pairs(ALLOWED_WEAPONS) do
+            if lowerID == allowedTerm or lowerID:find(allowedTerm) then
+                return true
+            end
+        end
+        -- If it's a weapon query and didn't match any allowed terms, block it completely
+        return false
     end
     
     -- Non-weapon building blocks, food, and tools pass through normally
@@ -236,14 +244,18 @@ local function processDemands()
     local mergedDemands = {}
     for _, req in ipairs(requests) do
         local needed = req.count or req.needed or 1
+        
+        -- Pull multiple identifiers from MineColonies to catch abstract queries
+        local reqName = req.name or req.desc or ""
+        
         if req.items then
             for _, item in ipairs(req.items) do
-                local itemID = extractItemString(item)
+                local itemID = extractItemString(item) or reqName
                 if itemID and type(itemID) == "string" then
                     itemID = itemID:match("^[^#]+") or itemID
                     
-                    -- Smart filter: Drop illegal modded/bugged guard gear variants immediately
-                    if isItemAllowed(itemID) then
+                    -- Smart filter: Intercepts abstract categories and registry names alike
+                    if isItemAllowed(itemID) and isItemAllowed(reqName) then
                         mergedDemands[itemID] = (mergedDemands[itemID] or 0) + needed
                     end
                 end
