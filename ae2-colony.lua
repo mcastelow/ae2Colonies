@@ -316,4 +316,3 @@ while true do
     end
     sleep(REFRESH_RATE)
 end
-
