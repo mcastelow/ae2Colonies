@@ -180,6 +180,35 @@ local function renderDashboard(statusLines)
     end
 end
 
+-- =====================================================================
+-- KERNEL LAYER PART 2: MAIN PROCESSING LOOP & WEAPON WHITELIST
+-- =====================================================================
+
+-- ====== LOGISTICS ALLOWED WEAPONS REGISTRY ======
+-- The computer will ONLY fulfill sword/bow requests if they match these exact IDs
+local ALLOWED_WEAPONS = {
+    ["minecraft:bow"] = true,
+    ["minecraft:stone_sword"] = true
+}
+-- ================================================
+
+-- Returns true if the item is permitted, or isn't a restricted gear category
+local function isItemAllowed(itemID)
+    if not itemID then return false end
+    local lowerID = itemID:lower()
+    
+    -- Detect if MineColonies is asking for a weapon/tool category item
+    local isWeapon = lowerID:find("sword") or lowerID:find("bow") or lowerID:find("shield")
+    
+    if isWeapon then
+        -- If it's a weapon, it MUST be explicitly registered in our whitelist table
+        return ALLOWED_WEAPONS[itemID] == true
+    end
+    
+    -- Non-weapon building blocks, food, and tools pass through normally
+    return true
+end
+
 local function processDemands()
     local statusLines = {}
     local colony = peripheral.find("colony_integrator")
@@ -190,7 +219,7 @@ local function processDemands()
         return
     end
 
-    -- DEFENSIVE SHIELD: Prevents Java IllegalStateExceptions inside MineColonies from killing the execution thread
+    -- DEFENSIVE SHIELD: Bypasses internal MineColonies Java exceptions safely
     local colonySuccess, requests = pcall(colony.getRequests)
     
     if not colonySuccess or not requests then
@@ -212,7 +241,11 @@ local function processDemands()
                 local itemID = extractItemString(item)
                 if itemID and type(itemID) == "string" then
                     itemID = itemID:match("^[^#]+") or itemID
-                    mergedDemands[itemID] = (mergedDemands[itemID] or 0) + needed
+                    
+                    -- Smart filter: Drop illegal modded/bugged guard gear variants immediately
+                    if isItemAllowed(itemID) then
+                        mergedDemands[itemID] = (mergedDemands[itemID] or 0) + needed
+                    end
                 end
             end
         end
@@ -283,3 +316,4 @@ while true do
     end
     sleep(REFRESH_RATE)
 end
+
